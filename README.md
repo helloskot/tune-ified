@@ -3,8 +3,8 @@
 Make things for your **Tuneshine** (the 64×64 LED display that shows album
 art) and send them to it: your camera as emoji, pictures and GIFs, scrolling
 pixel text, a clock, and a library of everything you've made. A sibling of
-[emoji·fied](https://helloskot.github.io/emoji-fied/), which it was forked
-from.
+[emoji·fied](https://helloskot.github.io/emoji-fied/), sharing its emoji
+palettes, topo map and look.
 
 Live at **https://helloskot.github.io/tune-ified/** (once GitHub Pages is on).
 
