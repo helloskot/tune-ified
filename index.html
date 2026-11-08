@@ -9,7 +9,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📟</text></svg>" />
   <link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="fonts/dm-mono-500.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="style.css?v=1" />
+  <link rel="stylesheet" href="style.css?v=2" />
 </head>
 <body>
   <header>
@@ -39,7 +39,27 @@
           <span>Brightness <output id="brightOut"></output></span>
           <input id="bright" type="range" min="1" max="100" step="1" value="60" />
         </label>
-        <button id="clearBtn" type="button" class="quiet" title="Clear the picture: the Tuneshine goes back to your music">⏹ Back to the music</button>
+        <div class="back">
+          <button id="clearBtn" type="button" title="Clear the picture: the Tuneshine goes back to your music">⏹ Back to the music</button>
+          <label class="field">
+            <span>Or by itself</span>
+            <select id="backAfter">
+              <option value="0">Only when I press ⏹</option>
+              <option value="1">1 minute after sending</option>
+              <option value="5">5 minutes after sending</option>
+              <option value="15">15 minutes after sending</option>
+              <option value="60">1 hour after sending</option>
+            </select>
+          </label>
+        </div>
+        <div class="clear-help" id="clearHelp" hidden>
+          <p><b>Your Tuneshine won’t let web pages clear it</b><span id="clearWhy"></span>. To get your music back:</p>
+          <ul>
+            <li>clear it in the Tuneshine app, or</li>
+            <li>paste this into Terminal on this Mac:</li>
+          </ul>
+          <div class="cmd"><code id="clearCmd"></code><button id="copyCmd" type="button">Copy</button></div>
+        </div>
       </div>
     </section>
 
@@ -234,10 +254,10 @@
     <p>Needs Chrome or Edge on a computer on the same Wi-Fi as your Tuneshine (firmware 2.3.0 or later). A sibling of <a href="https://helloskot.github.io/emoji-fied/">emoji·fied</a>.</p>
   </footer>
 
-  <script src="js/glyphs.js?v=1"></script>
-  <script src="js/pixelfont.js?v=1"></script>
-  <script src="js/look.js?v=1"></script>
-  <script src="js/tuneshine.js?v=1"></script>
-  <script src="js/app.js?v=1"></script>
+  <script src="js/glyphs.js?v=2"></script>
+  <script src="js/pixelfont.js?v=2"></script>
+  <script src="js/look.js?v=2"></script>
+  <script src="js/tuneshine.js?v=2"></script>
+  <script src="js/app.js?v=2"></script>
 </body>
 </html>

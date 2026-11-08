@@ -89,23 +89,46 @@ async function tsConnect(raw) {
   }
 }
 
+// Uploads still on their way, so clearing can wait for them: one landing
+// just after the clear would put the picture straight back.
+const tsInflight = new Set();
+
 function tsUpload(blob, title = 'tune·fied') {
   const fd = new FormData();
   fd.append('image', blob, 'tunefied.webp');
   fd.append('metadata', new Blob([JSON.stringify({ trackName: title, artistName: 'tune·fied', serviceName: 'tune·fied' })], { type: 'application/json' }));
-  return tsFetch('/image', { method: 'POST', body: fd });
+  const p = tsFetch('/image', { method: 'POST', body: fd });
+  tsInflight.add(p);
+  p.catch(() => {}).finally(() => tsInflight.delete(p));
+  return p;
 }
 
-// Hand the screen back to the music. Returns false if the Tuneshine won't
-// let a web page do that (no CORS).
+// Hand the screen back to the music: after any uploads in flight land,
+// DELETE /image, asking it not to keep the picture dimmed (preserveImage
+// false), then plainly. A web page can only send a DELETE if the Tuneshine
+// allows it (CORS), so this returns { ok, already, http }.
 async function tsClear() {
-  try {
-    await tsFetch('/image', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preserveImage: false }) }, { readable: true });
-    return true;
-  } catch {
-    return false;
+  await Promise.allSettled([...tsInflight]);
+  let http = 0;
+  for (const opts of [
+    { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ preserveImage: false }) },
+    { method: 'DELETE' },
+  ]) {
+    try {
+      await tsFetch('/image', opts, { readable: true });
+      return { ok: true };
+    } catch (err) {
+      // Nothing of ours on it: it's already showing the music.
+      if (err.http === 404 || err.http === 409) return { ok: true, already: true };
+      http = err.http || 0;
+    }
   }
+  // No status at all: the browser blocked it (no CORS), the usual case.
+  return { ok: false, http };
 }
+
+// The same clear, as a Terminal command, for when a web page can't.
+const tsClearCommand = () => `curl -X DELETE -H 'Content-Type: application/json' -d '{"preserveImage":false}' ${TS.base}/image`;
 
 async function tsBrightness(v) {
   const body = JSON.stringify({ active: v });

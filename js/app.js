@@ -11,7 +11,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ui = {};
 for (const id of [
   'logoDot', 'conn', 'connDot', 'host', 'connectBtn', 'led', 'liveBtn', 'sendBtn', 'saveBtn', 'status',
-  'bright', 'brightOut', 'clearBtn', 'sourceSeg', 'thumb', 'video', 'crop', 'startBtn', 'zoom', 'zoomOut',
+  'bright', 'brightOut', 'clearBtn', 'backAfter', 'clearHelp', 'clearWhy', 'clearCmd', 'copyCmd', 'sourceSeg', 'thumb', 'video', 'crop', 'startBtn', 'zoom', 'zoomOut',
   'mirror', 'videoFile', 'liveMode', 'fps', 'fpsOut', 'loopSecs', 'drop', 'pictureFile', 'pictureInfo',
   'fitSeg', 'pzoom', 'pzoomOut', 'pspeed', 'pspeedOut', 'lookBox', 'lookReset', 'style', 'grid',
   'matchField', 'match', 'contrast', 'contrastOut', 'lbright', 'lbrightOut', 'sat', 'satOut', 'blankField',
@@ -599,11 +599,11 @@ async function libSend(it) {
   libRefresh();
   libFrames(it);
   if (!TS.connected) return status(`Showing “${it.name}” here. Connect your Tuneshine to send it.`);
-  stopLive();
+  stopLive(true);
   status(`Sending “${it.name}”…`);
   try {
     await tsUpload(it.blob, it.name);
-    status(`“${it.name}” is on the Tuneshine.`, 'good');
+    status(`“${it.name}” is on the Tuneshine.${armBack()}`, 'good');
   } catch (err) {
     status(`Couldn’t send it: ${err.message}`, 'bad');
   }
@@ -690,7 +690,7 @@ function delivered(frames, ms) {
 function failed(err) {
   console.warn('tuneshine send failed:', err);
   if (++engine.fails < 3) return false;
-  stopLive();
+  stopLive(true);
   status('Lost the Tuneshine. Check it’s on and try again.', 'bad');
   return true;
 }
@@ -771,6 +771,8 @@ async function clockLoop(gen) {
 function startLive() {
   if (!TS.connected) return status('Connect your Tuneshine first.', 'bad');
   if (!MODES[mode].ready()) return status(MODES[mode].notReady, 'bad');
+  clearTimeout(backTimer); // it's live: no going back mid-show
+  backAt = 0;
   engine.on = true;
   engine.mode = mode;
   engine.gen++;
@@ -781,16 +783,16 @@ function startLive() {
   syncActions();
 }
 
-function stopLive() {
+function stopLive(quiet = false) {
   if (!engine.on) return;
   engine.on = false;
   engine.gen++;
   syncActions();
-  status('Stopped. The last picture stays on the Tuneshine.');
+  if (!quiet) status(`Stopped.${armBack() || ' The last picture stays until you press ⏹ Back to the music.'}`);
 }
 
 ui.liveBtn.addEventListener('click', () => (engine.on ? stopLive() : startLive()));
-ui.liveMode.addEventListener('change', () => engine.on && engine.mode === 'camera' && (stopLive(), startLive()));
+ui.liveMode.addEventListener('change', () => engine.on && engine.mode === 'camera' && (stopLive(true), startLive()));
 
 // ---- Send and save: one WebP, still or animated ---------------------------------------
 
@@ -868,14 +870,14 @@ async function sendOrSave(send) {
   busy = true;
   ui.sendBtn.disabled = ui.saveBtn.disabled = true;
   try {
-    if (send) stopLive();
+    if (send) stopLive(true);
     const { frames, durations, title } = await bake();
     const blob = new Blob([animatedWebp(frames, LED, LED, durations)], { type: 'image/webp' });
     const ms = durations.reduce((n, d) => n + d, 0);
     if (send) {
       status('Sending…');
       await tsUpload(blob, title);
-      status(`On the Tuneshine${frames.length > 1 ? `: ${frames.length} frames, ${(ms / 1000).toFixed(1)} s, playing by itself` : ''}. Kept in your library.`, 'good');
+      status(`On the Tuneshine${frames.length > 1 ? `: ${frames.length} frames, ${(ms / 1000).toFixed(1)} s, playing by itself` : ''}. Kept in your library.${armBack()}`, 'good');
     } else status('Saved to your library.', 'good');
     await libAdd({ name: title, mode, blob, frames: frames.length, ms });
   } catch (err) {
@@ -900,7 +902,7 @@ function connected(on, msg, tone) {
 async function connect() {
   const host = ui.host.value.trim();
   store.set('host', host);
-  stopLive();
+  stopLive(true);
   connected(false, 'Looking for your Tuneshine…');
   ui.connectBtn.disabled = true;
   try {
@@ -926,11 +928,53 @@ ui.bright.addEventListener('input', () => {
   if (TS.connected) brightTimer = setTimeout(() => tsBrightness(+ui.bright.value), 250);
 });
 
-ui.clearBtn.addEventListener('click', async () => {
-  stopLive();
+// ---- Back to the music --------------------------------------------------------------
+// ⏹ clears what we sent so the Tuneshine shows your music again, or it can
+// happen by itself a while after sending. Live sending stops first, and the
+// clear waits for anything still on its way (see tsClear).
+
+let backTimer = 0, backAt = 0;
+
+async function backToMusic(auto = false) {
+  clearTimeout(backTimer);
+  backAt = 0;
+  if (engine.on) stopLive(true);
   if (!TS.connected) return status('Connect your Tuneshine first.', 'bad');
-  const ok = await tsClear();
-  status(ok ? 'Handed back to the music.' : 'The Tuneshine won’t let web pages clear it: clear it in the Tuneshine app.', ok ? 'good' : 'bad');
+  status(auto ? 'Time’s up: handing it back to the music…' : 'Handing it back to the music…');
+  const r = await tsClear();
+  ui.clearHelp.hidden = r.ok;
+  if (r.ok) return status(r.already ? 'It’s already showing your music.' : 'Back to the music.', 'good');
+  ui.clearWhy.textContent = r.http ? ` (it answered ${r.http})` : '';
+  ui.clearCmd.textContent = tsClearCommand();
+  status('Couldn’t clear it from here: see below.', 'bad');
+}
+
+// After a send, start the countdown (if one's chosen). Returns a note for
+// the status line.
+function armBack() {
+  clearTimeout(backTimer);
+  const min = +ui.backAfter.value;
+  backAt = min ? Date.now() + min * 60000 : 0;
+  if (!min) return '';
+  backTimer = setTimeout(() => backToMusic(true), min * 60000);
+  return ` Back to the music in ${min === 60 ? '1 hour' : `${min} min`}.`;
+}
+
+ui.clearBtn.addEventListener('click', () => backToMusic());
+ui.backAfter.value = String(store.get('backAfter', 0));
+ui.backAfter.addEventListener('change', () => {
+  store.set('backAfter', +ui.backAfter.value);
+  if (backAt) status(armBack().trim() || 'It’ll stay until you press ⏹.');
+});
+ui.copyCmd.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(ui.clearCmd.textContent);
+    ui.copyCmd.textContent = 'Copied';
+  } catch {
+    getSelection().selectAllChildren(ui.clearCmd);
+    ui.copyCmd.textContent = 'Press ⌘C';
+  }
+  setTimeout(() => (ui.copyCmd.textContent = 'Copy'), 1600);
 });
 
 // ---- The logo's dot keeps changing its mind ---------------------------------------------

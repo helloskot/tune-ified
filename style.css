@@ -134,7 +134,8 @@ main {
 
 /* ---- The screen ------------------------------------------------------------------ */
 
-.screen { display: grid; gap: 12px; }
+.screen { display: grid; gap: 12px; min-width: 0; }
+.screen > *, .device > * { min-width: 0; }
 .led {
   position: relative;
   aspect-ratio: 1;
@@ -176,7 +177,6 @@ main {
 
 .device {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
@@ -185,6 +185,14 @@ main {
   border-radius: var(--r-md);
 }
 body:not(.connected) .device { opacity: 0.55; }
+.back { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 12px; align-items: end; }
+.back button { white-space: nowrap; }
+.clear-help { padding: 12px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--bad) 10%, transparent); border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent); font-size: 13.5px; }
+.clear-help p, .clear-help ul { margin: 0 0 8px; }
+.clear-help ul { padding-left: 18px; }
+.cmd { display: flex; gap: 8px; align-items: center; }
+.cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 8px 10px; border-radius: 6px; background: #000; font: 12px var(--mono); }
+.cmd button { padding: 6px 12px; font-size: 13px; }
 
 /* ---- Panel and tabs ------------------------------------------------------------------- */
 

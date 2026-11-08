@@ -64,8 +64,29 @@ The address is remembered, and the page reconnects by itself next time.
   newest 80). Click one to show it on the Tuneshine, ⬇ to download the
   `.webp`, ✕ to delete it.
 
-**Brightness** sets the Tuneshine's brightness. **⏹ Back to the music**
-clears your picture so it shows your music again.
+**Brightness** sets the Tuneshine's brightness.
+
+## Back to the music
+
+A picture you send stays on the Tuneshine until it's cleared.
+**⏹ Back to the music** clears it, and the Tuneshine goes back to showing
+your music.
+
+- **How it clears:** it stops live sending first and waits for anything
+  still on its way to land, so a late clip can't put the picture back.
+  Then it sends `DELETE /image` with `{"preserveImage": false}`, so the
+  picture isn't kept on screen dimmed.
+- **By itself:** set it to go back 1, 5 or 15 minutes, or an hour, after
+  sending, or after you stop live. Starting live cancels the countdown,
+  and the page needs to stay open.
+- **If it can't:** a web page can only send a `DELETE` if the Tuneshine
+  allows it (CORS). If it doesn't, the page says so and gives you a
+  one-line Terminal command (with a Copy button) that does the same thing.
+  Clearing it in the Tuneshine app works too:
+
+```
+curl -X DELETE -H 'Content-Type: application/json' -d '{"preserveImage":false}' http://tuneshine-20b4.local/image
+```
 
 ## How it works
 
