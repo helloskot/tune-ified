@@ -4,664 +4,260 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0e0d11" />
-  <!-- Installable: "Add to Home Screen" opens full screen, without Safari's toolbars -->
   <link rel="manifest" href="manifest.webmanifest" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="emoji·fied" />
-  <link rel="apple-touch-icon" href="icons/icon-180.png" />
-  <title>Emoji-fied</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤩</text></svg>" />
+  <title>tune·fied</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📟</text></svg>" />
   <link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="fonts/dm-mono-500.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="style.css?v=40" />
+  <link rel="stylesheet" href="style.css?v=2" />
 </head>
 <body>
   <header>
-    <h1 class="logo" aria-label="emoji·fied">emoji<span class="logo-dot" id="logoDot" aria-hidden="true">😀</span>fied</h1>
-    <span id="fps" class="fps" aria-live="off"></span>
+    <h1 class="logo" aria-label="tune·fied">tune<span class="logo-dot" id="logoDot" aria-hidden="true">🎵</span>fied</h1>
+    <form class="conn" id="conn" autocomplete="off">
+      <span class="conn-dot" id="connDot" aria-hidden="true"></span>
+      <input id="host" type="text" placeholder="Tuneshine address, e.g. tuneshine-20b4.local" spellcheck="false" inputmode="url" aria-label="Tuneshine address" />
+      <button id="connectBtn" type="submit">Connect</button>
+    </form>
   </header>
 
   <main>
-    <div class="stage" id="stage">
-      <canvas id="out" aria-label="Camera rendered as emoji or unicode characters"></canvas>
-      <video id="video" playsinline muted autoplay></video>
-      <div class="blackout" id="blackout" aria-hidden="true"><span>⬛ Blackout on the output · B to bring it back</span></div>
-
-      <button id="exitFull" class="exit-full" type="button" aria-label="Exit full screen" title="Exit full screen (Esc)" hidden>✕</button>
-
-      <div class="tv-hint" id="tvHint" hidden role="dialog" aria-label="Show on a TV">
-        <h2>📺 Show it on your TV</h2>
-        <ol id="tvSteps"></ol>
-        <p class="tv-note">Web pages can’t AirPlay a live camera effect directly, so mirror the screen instead. The app stays full screen, so the TV shows just the art.</p>
-        <button id="tvHintClose" class="primary" type="button">Got it</button>
+    <!-- The screen: what the Tuneshine shows (or will) -->
+    <section class="screen">
+      <div class="led" id="ledBox">
+        <canvas id="led" width="64" height="64" aria-label="The 64 × 64 picture"></canvas>
+        <div class="led-mask" aria-hidden="true"></div>
       </div>
-
-      <button id="flipFab" class="flip-fab" type="button" aria-label="Switch camera" title="Switch camera" hidden>
-        <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M20 7h-3l-2-3H9L7 7H4a1 1 0 0 0-1 1v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1z" />
-          <path d="M15.6 11.2A3.6 3.6 0 0 0 9 11.5" />
-          <path d="M8.4 14.8a3.6 3.6 0 0 0 6.6-.3" />
-          <path d="M9 9.2v2.4h2.4" />
-          <path d="M15 16.8v-2.4h-2.4" />
-        </svg>
-      </button>
-
-      <div class="overlay" id="overlay">
-        <div class="overlay-card">
-          <div class="big" aria-hidden="true"><span>😀</span><span>🔥</span><span>🌈</span></div>
-          <h2 class="hello">Turn anything into emoji.</h2>
-          <p class="lede">Your camera, a video or a GIF, drawn live in emoji &amp; unicode.</p>
-          <button id="start" class="primary">Start camera</button>
-          <div class="alt-sources">
-            <button id="startFile" type="button">🎞 Play a video or GIF</button>
-            <button id="startScreen" type="button">🖥 Share a tab or screen</button>
-          </div>
-          <p class="status" id="status" aria-live="polite"></p>
-          <p class="error" id="error" role="alert"></p>
-          <p class="note">Everything runs in your browser. No video leaves your device. <span class="version">v40</span></p>
-        </div>
+      <div class="actions">
+        <button id="liveBtn" type="button" class="primary" aria-pressed="false">▶ Go live</button>
+        <button id="sendBtn" type="button" class="primary">📤 Send a loop</button>
+        <button id="saveBtn" type="button">💾 Save</button>
       </div>
-    </div>
-
-    <section class="controls" aria-label="Filter controls">
-      <!-- Two groups, side by side on a tablet held upright. -->
-      <div class="ctl-main">
-      <div class="toolbar" role="toolbar" aria-label="Actions">
-        <button id="record" class="tool record" type="button" title="Record a video clip"><span class="ico">⏺</span><span class="lbl">Record</span></button>
-        <button id="snap" class="tool" type="button" title="Take a snapshot (P). It waits in Snapshots until you save it."><span class="ico">📸</span><span class="lbl">Photo</span><span class="badge" id="snapBadge" hidden></span></button>
-        <button id="pause" class="tool" type="button" title="Freeze the frame (Space)"><span class="ico">⏸</span><span class="lbl">Pause</span></button>
-        <button id="full" class="tool" type="button" title="Full screen"><span class="ico">⛶</span><span class="lbl">Full</span></button>
-        <button id="airplay" class="tool" type="button" title="Show it on a TV: AirPlay, Picture in Picture or the native player"><span class="ico">📺</span><span class="lbl">TV</span></button>
-        <button id="moreBtn" class="tool" type="button" aria-haspopup="menu" aria-expanded="false" title="More"><span class="ico">⋯</span><span class="lbl">More</span></button>
-        <div class="menu" id="moreMenu" role="menu" hidden>
-          <button id="flip" type="button" role="menuitem">🔄 Switch camera</button>
-          <button id="snapsItem" type="button" role="menuitem">🖼 Snapshots</button>
-          <button id="copy" type="button" role="menuitem">📋 Copy the frame as text</button>
-          <button id="keysItem" type="button" role="menuitem">⌨ Keyboard shortcuts <kbd>?</kbd></button>
-          <button id="splitItem" type="button" role="menuitemcheckbox" aria-checked="true" hidden>📐 Split at the fold</button>
-        </div>
-      </div>
-      <button id="snapTray" class="snap-tray" type="button" hidden></button>
-
-      <div class="field">
-        <span>Source</span>
-        <div class="seg" role="group" aria-label="Video source">
-          <button type="button" data-source="camera" aria-pressed="true">📷 Camera</button>
-          <button type="button" data-source="file" aria-pressed="false">🎞 Video/GIF</button>
-          <button type="button" data-source="screen" aria-pressed="false">🖥 Screen</button>
-        </div>
-        <input id="fileInput" type="file" accept="video/*,image/*" hidden />
-      </div>
-
-      <div class="field">
-        <label for="style">Style</label>
-        <div class="style-row">
-        <select id="style">
-          <optgroup label="Emoji">
-            <option value="emoji:everything" selected>Everything</option>
-            <option value="emoji:rainbow">Rainbow</option>
-            <option value="emoji:faces">Faces</option>
-            <option value="emoji:food">Food</option>
-            <option value="emoji:nature">Nature</option>
-            <option value="emoji:animals">Animals</option>
-            <option value="emoji:hearts">Hearts</option>
-            <option value="emoji:terrain">Terrain 🏔️</option>
-            <option value="skull">Skulls 💀</option>
-          </optgroup>
-          <optgroup label="Unicode">
-            <option value="text:ascii">ASCII</option>
-            <option value="text:detailed">ASCII (detailed)</option>
-            <option value="text:blocks">Blocks ░▒▓█</option>
-            <option value="text:shapes">Shapes ·○◎●</option>
-            <option value="text:stars">Stars ✧✦★</option>
-            <option value="text:math">Math ∴∷≡⊠</option>
-            <option value="text:katakana">Katakana ｱｶｻ</option>
-            <option value="braille">Braille ⠿</option>
-          </optgroup>
-          <optgroup label="Your own">
-            <option value="custom">Custom…</option>
-          </optgroup>
-        </select>
-        <button id="random" class="random" type="button" title="Randomize the look (D)" aria-label="Randomize">🎲</button>
-        </div>
-      </div>
-
-      <label class="field" id="customField" hidden>
-        <span>Characters</span>
-        <input id="custom" type="text" value="🐸🍀💚🌿🟩" autocomplete="off" spellcheck="false" />
-      </label>
-
-      <label class="field range">
-        <span>Detail <output id="colsOut"></output></span>
-        <input id="cols" type="range" min="16" max="180" value="64" />
-      </label>
-      </div>
-
-      <div class="ctl-tabs">
-      <div class="tabs" role="tablist" aria-label="Settings">
-        <button type="button" role="tab" data-tab="look" aria-selected="true"><span class="tab-ico">🎨</span> Look</button>
-        <button type="button" role="tab" data-tab="words" aria-selected="false"><span class="tab-ico">🔤</span> Words<span class="tab-dot words-dot" id="wordsDot" hidden></span></button>
-        <button type="button" role="tab" data-tab="beat" aria-selected="false"><span class="tab-ico">🎵</span> Beat<span class="tab-dot" id="soundDot" hidden></span></button>
-        <button type="button" role="tab" data-tab="live" aria-selected="false"><span class="tab-ico">🎬</span> Live<span class="tab-dot live-dot" id="liveDot" hidden></span></button>
-        <button type="button" role="tab" data-tab="photo" aria-selected="false" id="photoTab" hidden><span class="tab-ico">🖼</span> Photo</button>
-      </div>
-
-      <!-- Look: how the picture is drawn -->
-      <div class="tab-panel" data-panel="look" role="tabpanel">
-        <div class="sec" id="looksSec">
-          <div class="sec-head">
-            <span class="field-label">Try a look</span>
-            <span class="hint">tap to try · keep it in 🎬 Live</span>
-          </div>
-          <div class="looks" id="looks"></div>
-        </div>
-        <div class="sec">
-          <label class="field" id="matchField">
-            <span>Match by</span>
-            <select id="match">
-              <option value="color">Color</option>
-              <option value="brightness">Brightness</option>
-            </select>
-          </label>
-          <label class="field" id="colorField" hidden>
-            <span>Ink</span>
-            <select id="ink">
-              <option value="full">Full color</option>
-              <option value="#39ff7a">Matrix green</option>
-              <option value="#f2f2f2">White</option>
-              <option value="#ffb000">Amber</option>
-              <option value="#5ec8ff">Cyan</option>
-              <option value="#ff4fd8">Magenta</option>
+      <p class="status" id="status" role="status">Connect your Tuneshine to start.</p>
+      <div class="device" id="device">
+        <label class="field range">
+          <span>Brightness <output id="brightOut"></output></span>
+          <input id="bright" type="range" min="1" max="100" step="1" value="60" />
+        </label>
+        <div class="back">
+          <button id="clearBtn" type="button" title="Clear the picture: the Tuneshine goes back to your music">⏹ Back to the music</button>
+          <label class="field">
+            <span>Or by itself</span>
+            <select id="backAfter">
+              <option value="0">Only when I press ⏹</option>
+              <option value="1">1 minute after sending</option>
+              <option value="5">5 minutes after sending</option>
+              <option value="15">15 minutes after sending</option>
+              <option value="60">1 hour after sending</option>
             </select>
           </label>
         </div>
-        <div class="sec">
-          <div class="sec-head">
-            <span class="field-label">Adjustments</span>
-            <button id="resetAdjust" type="button" class="reset">Reset</button>
-          </div>
-          <label class="field range">
-            <span>Contrast <output id="contrastOut"></output></span>
-            <input id="contrast" type="range" min="0.5" max="3" step="0.05" value="1.2" />
-          </label>
-          <label class="field range">
-            <span>Brightness <output id="brightOut"></output></span>
-            <input id="bright" type="range" min="-0.5" max="0.5" step="0.01" value="0" />
-          </label>
-          <label class="field range">
-            <span>Saturation <output id="satOut"></output></span>
-            <input id="sat" type="range" min="0" max="3" step="0.05" value="1" />
-          </label>
-          <label class="field range">
-            <span>Shadows <output id="shadowsOut"></output></span>
-            <input id="shadows" type="range" min="-1" max="1" step="0.02" value="0" />
-          </label>
-          <label class="field range">
-            <span>Highlights <output id="highlightsOut"></output></span>
-            <input id="highlights" type="range" min="-1" max="1" step="0.02" value="0" />
-          </label>
-        </div>
-        <div class="sec" id="topoSec">
-          <div class="sec-head">
-            <span class="field-label">🗺 Topo map</span>
-            <div class="toggles"><label title="Read the picture as a landscape: brightness is height (G)"><input id="topo" type="checkbox" /> On <kbd>G</kbd></label></div>
-          </div>
-          <div id="topoOpts" hidden>
-            <label class="field">
-              <span>Map</span>
-              <select id="topoMode">
-                <option value="map" selected>Sea, land &amp; snow</option>
-                <option value="lines">Contour lines (neon)</option>
-                <option value="paper">Paper survey</option>
-              </select>
-            </label>
-            <label class="field range">
-              <span>Contours <output id="topoLevelsOut"></output></span>
-              <input id="topoLevels" type="range" min="4" max="24" step="1" value="10" />
-            </label>
-          </div>
-        </div>
-        <div class="sec">
-          <div class="toggles">
-            <label><input id="mirror" type="checkbox" checked /> Mirror</label>
-            <label><input id="invert" type="checkbox" /> Invert</label>
-            <label id="blankField"><input id="blank" type="checkbox" checked /> Blank darks</label>
-            <label title="The picture builds itself from falling Tetris pieces (T)"><input id="tetris" type="checkbox" /> 🧱 Tetris build</label>
-          </div>
+        <div class="clear-help" id="clearHelp" hidden>
+          <p><b>Your Tuneshine won’t let web pages clear it</b><span id="clearWhy"></span>. To get your music back:</p>
+          <ul>
+            <li>clear it in the Tuneshine app, or</li>
+            <li>paste this into Terminal on this Mac:</li>
+          </ul>
+          <div class="cmd"><code id="clearCmd"></code><button id="copyCmd" type="button">Copy</button></div>
         </div>
       </div>
+    </section>
 
-      <!-- Beat: what drives the effects, and what a beat does -->
-      <!-- Words: a message drawn out of the picture's own emoji or characters -->
-      <div class="tab-panel" data-panel="words" role="tabpanel" hidden>
+    <!-- What to show -->
+    <section class="panel">
+      <nav class="tabs" role="tablist">
+        <button type="button" role="tab" data-mode="camera" aria-selected="true">📷 <span>Camera</span></button>
+        <button type="button" role="tab" data-mode="picture" aria-selected="false">🖼 <span>Picture</span></button>
+        <button type="button" role="tab" data-mode="text" aria-selected="false">🔤 <span>Text</span></button>
+        <button type="button" role="tab" data-mode="clock" aria-selected="false">🕐 <span>Clock</span></button>
+        <button type="button" role="tab" data-mode="library" aria-selected="false">💾 <span>Library</span></button>
+      </nav>
+
+      <!-- Camera: camera, video file or screen, live -->
+      <div class="tab-panel" data-panel="camera">
         <div class="sec">
-          <div class="sec-head">
-            <span class="field-label">Your words</span>
-            <div class="toggles"><label title="Show or hide the words (M)"><input id="wordsOn" type="checkbox" /> Show <kbd>M</kbd></label></div>
+          <div class="seg" id="sourceSeg">
+            <button type="button" data-source="camera" aria-pressed="true">📷 Camera</button>
+            <button type="button" data-source="file" aria-pressed="false">🎞 Video</button>
+            <button type="button" data-source="screen" aria-pressed="false">🖥 Screen</button>
           </div>
-          <textarea id="words" rows="2" spellcheck="false" autocomplete="off" placeholder="Type something… (Enter starts a new line)">HELLO</textarea>
+          <div class="source-view">
+            <div class="thumb" id="thumb">
+              <video id="video" playsinline muted autoplay></video>
+              <div class="crop" id="crop" aria-hidden="true"></div>
+              <button id="startBtn" type="button" class="primary start">Start the camera</button>
+            </div>
+            <div class="framing">
+              <label class="field range"><span>Zoom <output id="zoomOut"></output></span><input id="zoom" type="range" min="1" max="4" step="0.05" value="1" /></label>
+              <label class="switch"><input id="mirror" type="checkbox" checked /> Mirror</label>
+            </div>
+          </div>
+          <input id="videoFile" type="file" accept="video/*" hidden />
+        </div>
+        <div class="sec">
+          <span class="field-label">Live</span>
           <label class="field">
             <span>Mode</span>
-            <select id="wordsMode">
-              <option value="over" selected>Over the picture</option>
-              <option value="only">Words only</option>
-              <option value="cutout">Cut-out (picture inside the letters)</option>
+            <select id="liveMode">
+              <option value="smooth" selected>Smooth · short clips, about ½ s behind</option>
+              <option value="instant">Instant · one picture at a time</option>
+            </select>
+          </label>
+          <label class="field range"><span>Speed <output id="fpsOut"></output></span><input id="fps" type="range" min="1" max="30" step="1" value="15" /></label>
+          <label class="field">
+            <span>Loops last</span>
+            <select id="loopSecs">
+              <option value="2">2 seconds</option>
+              <option value="3" selected>3 seconds</option>
+              <option value="5">5 seconds</option>
+              <option value="8">8 seconds</option>
             </select>
           </label>
         </div>
+      </div>
+
+      <!-- Picture: any image or GIF -->
+      <div class="tab-panel" data-panel="picture" hidden>
         <div class="sec">
+          <label class="drop" id="drop">
+            <input id="pictureFile" type="file" accept="image/*" hidden />
+            <span class="drop-big">🖼</span>
+            <span><b>Drop a picture or GIF here</b>, or click to choose one</span>
+            <span class="hint" id="pictureInfo">PNG, JPEG, GIF, WebP. Animated ones keep moving.</span>
+          </label>
+          <div class="seg" id="fitSeg">
+            <button type="button" data-fit="fill" aria-pressed="true">Fill the square</button>
+            <button type="button" data-fit="fit" aria-pressed="false">Fit it all in</button>
+          </div>
+          <label class="field range"><span>Zoom <output id="pzoomOut"></output></span><input id="pzoom" type="range" min="1" max="4" step="0.05" value="1" /></label>
+          <label class="field range"><span>Animation speed <output id="pspeedOut"></output></span><input id="pspeed" type="range" min="0.25" max="3" step="0.25" value="1" /></label>
+        </div>
+      </div>
+
+      <!-- Look: shared by camera and picture (each keeps its own) -->
+      <div class="look" id="lookBox">
+        <div class="sec">
+          <div class="sec-head"><span class="field-label">Look</span><button id="lookReset" type="button" class="reset">Reset</button></div>
+          <label class="field">
+            <span>Style</span>
+            <select id="style">
+              <optgroup label="Emoji">
+                <option value="emoji:everything">Everything</option>
+                <option value="emoji:rainbow">Rainbow</option>
+                <option value="emoji:faces">Faces</option>
+                <option value="emoji:food">Food</option>
+                <option value="emoji:nature">Nature</option>
+                <option value="emoji:animals">Animals</option>
+                <option value="emoji:hearts">Hearts</option>
+                <option value="emoji:terrain">Terrain 🏔️</option>
+              </optgroup>
+              <optgroup label="LEDs">
+                <option value="dots">LED dots</option>
+                <option value="pixels">Pixels (no emoji)</option>
+              </optgroup>
+            </select>
+          </label>
+          <label class="field">
+            <span>Grid</span>
+            <select id="grid">
+              <option value="8">8 × 8 · big emoji</option>
+              <option value="12">12 × 12</option>
+              <option value="16">16 × 16</option>
+              <option value="24">24 × 24</option>
+              <option value="32">32 × 32</option>
+              <option value="64">64 × 64 · every LED</option>
+            </select>
+          </label>
+          <label class="field" id="matchField">
+            <span>Match by</span>
+            <select id="match"><option value="color">Colour</option><option value="brightness">Brightness</option></select>
+          </label>
+          <label class="field range"><span>Contrast <output id="contrastOut"></output></span><input id="contrast" type="range" min="0.5" max="2.5" step="0.05" value="1.2" /></label>
+          <label class="field range"><span>Brightness <output id="lbrightOut"></output></span><input id="lbright" type="range" min="-0.4" max="0.4" step="0.01" value="0" /></label>
+          <label class="field range"><span>Saturation <output id="satOut"></output></span><input id="sat" type="range" min="0" max="2.5" step="0.05" value="1.3" /></label>
+          <label class="switch" id="blankField"><input id="blank" type="checkbox" checked /> Leave dark cells empty</label>
+        </div>
+        <div class="sec">
+          <label class="field">
+            <span>🗺 Topo map</span>
+            <select id="topo">
+              <option value="off" selected>Off</option>
+              <option value="map">Sea, land &amp; snow</option>
+              <option value="lines">Contour lines (neon)</option>
+              <option value="paper">Paper survey</option>
+            </select>
+          </label>
+          <label class="field range" id="levelsField" hidden><span>Contours <output id="levelsOut"></output></span><input id="levels" type="range" min="4" max="20" step="1" value="8" /></label>
+        </div>
+      </div>
+
+      <!-- Text: a message in crisp pixel letters (emoji welcome) -->
+      <div class="tab-panel" data-panel="text" hidden>
+        <div class="sec">
+          <textarea id="msg" rows="2" spellcheck="false" placeholder="Type a message… emoji welcome">HELLO 👋</textarea>
+          <div class="seg" id="fontSeg">
+            <button type="button" data-font="pixel" aria-pressed="false">Pixel</button>
+            <button type="button" data-font="big" aria-pressed="true">Big pixel</button>
+            <button type="button" data-font="round" aria-pressed="false">Rounded</button>
+          </div>
           <label class="field">
             <span>Motion</span>
-            <select id="wordsMotion">
-              <option value="still" selected>Still</option>
-              <option value="scroll">Scroll (marquee)</option>
-              <option value="type">Typewriter</option>
+            <select id="motion">
+              <option value="scroll" selected>Scroll</option>
+              <option value="still">Still</option>
               <option value="bounce">Bounce</option>
-              <option value="pulse">Pulse on the beat</option>
             </select>
           </label>
-          <label class="field">
-            <span>Colour</span>
-            <select id="wordsColor">
-              <option value="#fffaf0" selected>White</option>
-              <option value="#ffd23f">Sunflower</option>
-              <option value="#ff6f91">Bubblegum</option>
-              <option value="#5cb8ff">Sky</option>
-              <option value="#6fe3a5">Mint</option>
-              <option value="rainbow">🌈 Rainbow</option>
-            </select>
-          </label>
-          <label class="field range">
-            <span>Size <output id="wordsSizeOut"></output></span>
-            <input id="wordsSize" type="range" min="15" max="95" step="1" value="55" />
-          </label>
-          <label class="field">
-            <span>Position</span>
-            <select id="wordsPos">
-              <option value="middle" selected>Middle</option>
-              <option value="top">Top</option>
-              <option value="bottom">Bottom</option>
-            </select>
-          </label>
-          <div class="toggles">
-            <label title="A dark edge so the letters read on a busy picture"><input id="wordsOutline" type="checkbox" checked /> Dark outline</label>
-          </div>
-          <span class="hint">The letters are drawn out of the current emoji or characters, so they change with the style. Scenes remember them.</span>
+          <label class="field range" id="speedField"><span>Speed <output id="speedOut"></output></span><input id="speed" type="range" min="8" max="60" step="1" value="24" /></label>
+        </div>
+        <div class="sec">
+          <span class="field-label">Colour</span>
+          <div class="swatches" id="textColor"></div>
+          <span class="field-label">Background</span>
+          <div class="swatches" id="textBg"></div>
         </div>
       </div>
 
-      <div class="tab-panel" data-panel="beat" role="tabpanel" hidden>
+      <!-- Clock -->
+      <div class="tab-panel" data-panel="clock" hidden>
         <div class="sec">
-          <span class="field-label">Listen to</span>
-          <div class="chips">
-            <label class="chip"><input id="mic" type="checkbox" /> 🎤 Sound</label>
-            <label class="chip" id="midiChip"><input id="midi" type="checkbox" /> 🎹 MIDI</label>
-            <label class="chip"><input id="tempoSync" type="checkbox" /> 🥁 Tempo</label>
-          </div>
-          <div class="meter" id="meter" hidden aria-hidden="true"><div class="meter-fill" id="meterFill"></div></div>
-          <div class="sub" id="micOpts" hidden>
-            <label class="field range" id="sensField">
-              <span>Sensitivity <output id="sensOut"></output></span>
-              <input id="sens" type="range" min="0.5" max="4" step="0.1" value="2" />
-            </label>
-            <span class="hint" id="micStatus">Listening to the microphone.</span>
-          </div>
-          <div class="sub" id="midiOpts" hidden>
-            <span class="hint" id="midiStatus">Notes hit like beats; held notes swell; low notes build Tetris on the left, high on the right.</span>
-          </div>
-          <div class="sub" id="tempoBox" hidden>
-            <div class="tempo-row">
-              <button id="tapBtn" type="button">🥁 Tap <kbd>K</kbd></button>
-              <span class="beat-dots" id="beatDots" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
-              <span class="tempo-read" id="tempoRead">No tempo yet</span>
-            </div>
-            <span class="hint">Tap 4 times or more, or send MIDI clock. The tempo’s beat replaces the microphone’s.</span>
-          </div>
-        </div>
-        <div class="sec" id="beatOpts">
-          <span class="field-label">On the beat</span>
-          <div class="toggles">
-            <label title="Glyphs swell with the loudness or held notes"><input id="beatPulse" type="checkbox" checked /> Pulse</label>
-            <label title="Flash, shake, zoom punch and a hue shift on each beat"><input id="beatFlash" type="checkbox" checked /> Flash</label>
-            <label title="Each beat drops Tetris pieces while 🧱 Tetris build is on"><input id="beatTetris" type="checkbox" checked /> Tetris drops</label>
-          </div>
           <label class="field">
-            <span>Shapes</span>
-            <select id="beatShape">
-              <option value="off" selected>🚫 Off</option>
-              <option value="mix">🎲 Mix it up</option>
-              <option value="circle">○ Circles</option>
-              <option value="heart">♥ Hearts</option>
-              <option value="star">★ Stars</option>
-              <option value="square">■ Squares</option>
-              <option value="diamond">◆ Diamonds</option>
-              <option value="hexagon">⬢ Hexagons</option>
-              <option value="sweep">≋ Sweeps</option>
+            <span>Style</span>
+            <select id="clockStyle">
+              <option value="digital" selected>Digital</option>
+              <option value="date">Digital with the date</option>
+              <option value="emoji">Emoji clock face</option>
             </select>
           </label>
-          <div class="toggles" id="beatOutlineRow" hidden>
-            <label><input id="beatOutline" type="checkbox" checked /> Glow outlines</label>
+          <div class="seg" id="hourSeg">
+            <button type="button" data-hours="12" aria-pressed="true">12-hour</button>
+            <button type="button" data-hours="24" aria-pressed="false">24-hour</button>
           </div>
-          <label class="field">
-            <span>Shuffle the look</span>
-            <select id="beatShuffle">
-              <option value="0" selected>Never</option>
-              <option value="1">Every beat</option>
-              <option value="2">Every 2 beats</option>
-              <option value="4">Every 4 beats</option>
-              <option value="8">Every 8 beats</option>
-              <option value="16">Every 16 beats</option>
-            </select>
-          </label>
-          <label class="field range">
-            <span>Strength <output id="fxOut"></output></span>
-            <input id="fxStrength" type="range" min="0" max="2" step="0.05" value="1" />
-          </label>
+          <span class="field-label">Colour</span>
+          <div class="swatches" id="clockColor"></div>
+          <p class="note">The Tuneshine gets a new picture each minute while this page is open.</p>
         </div>
       </div>
 
-      <!-- Live: performing -->
-      <div class="tab-panel live-panel" data-panel="live" role="tabpanel" hidden>
-        <div class="sec output-row" id="outputRow">
-          <button id="outputBtn" type="button" class="primary">📽 Open output window</button>
-          <span class="hint" id="outputStatus">A clean window for the projector: drag it there and double-click for full screen.</span>
-          <button id="outputClose" type="button" class="reset" hidden>Close the output window</button>
-        </div>
-        <div class="sec tune" id="tuneSec">
-          <div class="sec-head">
-            <span class="field-label">📟 Tuneshine</span>
-            <span class="hint" id="tuneStatus">Show the picture on your Tuneshine</span>
-          </div>
-          <div class="tune-connect">
-            <input id="tuneHost" type="text" placeholder="Its IP address, e.g. 192.168.1.42" autocomplete="off" spellcheck="false" inputmode="url" aria-label="Tuneshine address" />
-            <button id="tuneConnectBtn" type="button">Connect</button>
-          </div>
-          <div class="tune-body" id="tuneBody" hidden>
-            <div class="tune-main">
-              <canvas id="tunePreview" width="64" height="64" aria-label="What the Tuneshine shows"></canvas>
-              <div class="tune-actions">
-                <button id="tuneLiveBtn" type="button" class="primary" aria-pressed="false">▶ Go live</button>
-                <button id="tuneLoopBtn" type="button">🔁 Send a 3 s loop</button>
-                <button id="tuneStopBtn" type="button" title="Clear the picture: the Tuneshine goes back to your music">⏹ Back to the music</button>
-              </div>
-            </div>
-            <label class="field">
-              <span>Grid</span>
-              <select id="tuneGrid">
-                <option value="8">8 × 8 · big emoji</option>
-                <option value="12" selected>12 × 12</option>
-                <option value="16">16 × 16 · more detail</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>Live</span>
-              <select id="tuneMode">
-                <option value="smooth" selected>Smooth · short clips, about ½ s behind</option>
-                <option value="instant">Instant · one picture at a time</option>
-              </select>
-            </label>
-            <label class="field range">
-              <span>Live speed <output id="tuneFpsOut"></output></span>
-              <input id="tuneFps" type="range" min="1" max="30" step="1" value="15" />
-            </label>
-            <label class="field range">
-              <span>Brightness <output id="tuneBrightOut"></output></span>
-              <input id="tuneBright" type="range" min="1" max="100" step="1" value="60" />
-            </label>
-          </div>
-          <p class="note" id="tuneNote">Works from Chrome or Edge on a computer on the same Wi-Fi (Tuneshine firmware 2.3.0 or later). The address is in the Tuneshine app. When Chrome asks to reach devices on your local network, allow it.</p>
-        </div>
+      <!-- Library -->
+      <div class="tab-panel" data-panel="library" hidden>
         <div class="sec">
-          <span class="field-label">Panic</span>
-          <div class="panic">
-            <button id="blackoutBtn" type="button" aria-pressed="false">⬛ Blackout <kbd>B</kbd></button>
-            <button id="freezeBtn" type="button" aria-pressed="false">⏸ Freeze <kbd>Space</kbd></button>
-            <button id="safeBtn" type="button">🛟 Safe look <kbd>0</kbd></button>
-          </div>
+          <div class="sec-head"><span class="field-label">Your loops</span><span class="hint" id="libCount"></span></div>
+          <div class="library" id="library"></div>
+          <p class="note">Everything you send or save is kept here, in this browser. Click one to show it on the Tuneshine.</p>
         </div>
-        <div class="sec">
-          <div class="sec-head">
-            <span class="field-label">Effects · hold</span>
-            <span class="hint" id="punchHint"></span>
-          </div>
-          <div class="punches" id="punches"></div>
-        </div>
-        <div class="sec">
-          <div class="sec-head">
-            <span class="field-label">Scenes</span>
-            <span class="sec-actions">
-              <button id="examplesBtn" type="button" class="reset" title="Fill the empty slots with example scenes">✨ Examples</button>
-              <button id="sceneSave" type="button" class="reset" aria-pressed="false">💾 Save to a slot…</button>
-            </span>
-          </div>
-          <div class="scenes" id="scenes"></div>
-          <span class="hint" id="scenesHint"></span>
-        </div>
-        <div class="sec" id="learnSec">
-          <div class="sec-head" id="learnHead">
-            <span class="field-label">MIDI controller</span>
-            <button id="learnBtn" type="button" class="reset" aria-pressed="false">Learn…</button>
-          </div>
-          <div class="midi-map" id="midiMap"></div>
-          <span class="hint" id="learnHint">Click Learn…, then a slider or button, then move a knob or hit a pad.</span>
-        </div>
-        <button id="keysBtn" type="button" class="reset keys-link">⌨ All keyboard shortcuts <kbd>?</kbd></button>
-      </div>
-
-      <!-- Photo: only for photos and GIFs -->
-      <div class="tab-panel photo-panel" id="photoPanel" data-panel="photo" role="tabpanel" hidden>
-        <div class="sec">
-          <span class="field-label">Photo effects</span>
-          <div class="toggles">
-            <label><input id="kenBurns" type="checkbox" checked /> 🎥 Pan &amp; zoom</label>
-            <label><input id="tilt" type="checkbox" /> 📱 Tilt to move</label>
-            <label><input id="twinkle" type="checkbox" /> ✨ Twinkle</label>
-          </div>
-          <div class="tilt-opts" id="tiltOpts" hidden>
-            <label><input id="headTrack" type="checkbox" /> 🙂 Head tracking (webcam)</label>
-            <span class="hint">On a computer, the mouse and the arrow keys tilt it too.</span>
-          </div>
-          <button id="assemble" type="button">🧩 Build it again</button>
-        </div>
-        <div class="sec poster-box">
-          <span class="field-label">Poster</span>
-          <select id="posterSize" aria-label="Poster size">
-            <option value="4k">4K (3840 px)</option>
-            <option value="wallpaper">Phone wallpaper (1290×2796)</option>
-            <option value="square">Square (2048 px)</option>
-          </select>
-          <label class="field range">
-            <span>Poster detail <output id="posterColsOut"></output></span>
-            <input id="posterCols" type="range" min="80" max="400" value="180" />
-          </label>
-          <button id="makePoster" type="button" class="primary">🖼 Make a sharp poster</button>
-        </div>
-      </div>
       </div>
     </section>
   </main>
 
-  <div class="clip" id="clip" hidden>
-    <div class="clip-card" role="dialog" aria-label="Recorded clip">
-      <video id="clipVideo" playsinline loop muted autoplay controls x-webkit-airplay="allow"></video>
-      <p class="clip-info" id="clipInfo"></p>
-      <div class="clip-actions">
-        <button id="clipShare" class="primary">Save / Share</button>
-        <button id="clipAirplay">📺 AirPlay</button>
-        <button id="clipDownload">Download</button>
-        <button id="clipDiscard">Discard</button>
-      </div>
-    </div>
-  </div>
+  <footer>
+    <p>Needs Chrome or Edge on a computer on the same Wi-Fi as your Tuneshine (firmware 2.3.0 or later). A sibling of <a href="https://helloskot.github.io/emoji-fied/">emoji·fied</a>.</p>
+  </footer>
 
-  <div class="clip" id="player" hidden>
-    <div class="clip-card" role="dialog" aria-label="Live player">
-      <video id="liveVideo" playsinline autoplay muted controls x-webkit-airplay="allow"></video>
-      <p class="clip-info">Live picture in the native player (no sound). Use its controls or the buttons below.</p>
-      <div class="clip-actions">
-        <button id="playerAirplay" class="primary">📺 AirPlay</button>
-        <button id="playerPip">⧉ Picture in Picture</button>
-        <button id="playerFull">⛶ Full screen</button>
-      </div>
-      <button id="playerMirror" type="button" class="reset">TV not showing it? Use Screen Mirroring instead</button>
-      <button id="playerClose" type="button">Close</button>
-    </div>
-  </div>
-
-  <div class="clip" id="posterSheet" hidden>
-    <div class="clip-card" role="dialog" aria-label="Poster">
-      <img id="posterImg" alt="Your emoji poster" />
-      <p class="clip-info" id="posterInfo"></p>
-      <div class="clip-actions">
-        <button id="posterShare" class="primary">Save / Share</button>
-        <button id="posterDownload">Download</button>
-        <button id="posterClose">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="clip" id="snapSheet" hidden>
-    <div class="clip-card" role="dialog" aria-label="Snapshots">
-      <h2 class="sheet-title">🖼 Snapshots</h2>
-      <p class="clip-info">Kept here (in this tab) until you save them. Tap one to save just that one.</p>
-      <div class="snap-grid" id="snapGrid"></div>
-      <div class="clip-actions">
-        <button id="snapSaveAll" class="primary">Save all</button>
-        <button id="snapClear">Clear</button>
-        <button id="snapClose">Close</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="clip" id="keysSheet" hidden>
-    <div class="clip-card keys-card" role="dialog" aria-label="Keyboard shortcuts">
-      <h2 class="sheet-title">⌨ Keyboard shortcuts</h2>
-      <div class="keys">
-        <section>
-          <h3>Effects (hold; Shift locks)</h3>
-          <dl>
-            <dt><kbd>Q</kbd></dt><dd>⚡ Strobe</dd>
-            <dt><kbd>W</kbd></dt><dd>🔁 Stutter</dd>
-            <dt><kbd>E</kbd></dt><dd>🌈 Hue spin</dd>
-            <dt><kbd>R</kbd></dt><dd>🔍 Zoom</dd>
-            <dt><kbd>Z</kbd></dt><dd>🌗 Invert</dd>
-            <dt><kbd>X</kbd></dt><dd>🪞 Kaleido</dd>
-            <dt><kbd>C</kbd></dt><dd>📼 Glitch</dd>
-            <dt><kbd>V</kbd></dt><dd>🧊 Crunch</dd>
-          </dl>
-        </section>
-        <section>
-          <h3>Show</h3>
-          <dl>
-            <dt><kbd>B</kbd></dt><dd>⬛ Blackout</dd>
-            <dt><kbd>Space</kbd></dt><dd>⏸ Freeze</dd>
-            <dt><kbd>0</kbd></dt><dd>🛟 Safe look</dd>
-            <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>🎬 Scenes (Shift saves)</dd>
-            <dt><kbd>K</kbd></dt><dd>🥁 Tap tempo</dd>
-            <dt><kbd>D</kbd></dt><dd>🎲 Randomize</dd>
-            <dt><kbd>T</kbd></dt><dd>🧱 Tetris on/off</dd>
-            <dt><kbd>M</kbd></dt><dd>🔤 Words on/off</dd>
-            <dt><kbd>G</kbd></dt><dd>🗺 Topo map on/off</dd>
-          </dl>
-        </section>
-        <section>
-          <h3>Other</h3>
-          <dl>
-            <dt><kbd>P</kbd></dt><dd>📸 Snapshot, kept for later: no download mid-show</dd>
-            <dt><kbd>←↑↓→</kbd></dt><dd>📱 Tilt a photo (Tilt to move on)</dd>
-            <dt><kbd>?</kbd></dt><dd>This list</dd>
-            <dt><kbd>Esc</kbd></dt><dd>Close / leave full screen</dd>
-          </dl>
-        </section>
-      </div>
-      <p class="clip-info">Keys work in the output window too. Recording and switching camera have no keys, so they can’t be hit by accident.</p>
-      <button id="keysClose" type="button">Close</button>
-    </div>
-  </div>
-
-  <div class="toast" id="toast" role="status"></div>
-
-  <script>
-    // Surface script errors on the page: phones have no visible console.
-    (function () {
-      var el = document.getElementById('error');
-      function show(msg) { if (el && !el.textContent) el.textContent = 'Error: ' + msg; }
-      // Diagnostic log, shown when the URL has ?debug
-      var DEBUG = /[?&]debug\b/.test(location.search);
-      var lines = [];
-      var carried = 0; // lines copied from a previous (crashed) page
-      var t0 = Date.now();
-      var pre = null;
-      window.dbg = function () {
-        if (!DEBUG) return;
-        var msg = Array.prototype.map.call(arguments, function (a) {
-          return typeof a === 'string' ? a : JSON.stringify(a);
-        }).join(' ');
-        lines.push(((Date.now() - t0) / 1000).toFixed(2) + 's ' + msg);
-        // Persist so the log survives Safari reloading a crashed tab.
-        try { sessionStorage.setItem('emojiFiedLog', lines.slice(carried).join('\n')); } catch (e) {}
-        if (pre) pre.textContent = lines.join('\n');
-      };
-      function describe(n) {
-        if (!n || !n.tagName) return String(n);
-        return n.tagName.toLowerCase() + (n.id ? '#' + n.id : '') + (n.className && typeof n.className === 'string' ? '.' + n.className.split(' ').join('.') : '');
-      }
-      if (DEBUG) {
-        var box = document.createElement('section');
-        box.className = 'debug';
-        box.innerHTML = '<div><strong>Diagnostics</strong> <button type="button">Copy log</button></div><pre></pre>';
-        document.body.appendChild(box);
-        pre = box.querySelector('pre');
-        var previous = null;
-        try {
-          previous = sessionStorage.getItem('emojiFiedLog');
-          if (sessionStorage.getItem('emojiFiedClean') === '1') previous = null;
-          sessionStorage.setItem('emojiFiedClean', '0');
-        } catch (e) {}
-        window.addEventListener('pagehide', function () {
-          try { sessionStorage.setItem('emojiFiedClean', '1'); } catch (e) {}
-        });
-        if (previous) {
-          lines.push('=== Previous page ended without closing normally (probably crashed). Its log: ===');
-          previous.split('\n').forEach(function (l) { lines.push('  ' + l); });
-          lines.push('=== Current page ===');
-          carried = lines.length;
-        }
-        box.querySelector('button').addEventListener('click', function () {
-          var text = lines.join('\n');
-          (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(
-            function () { box.querySelector('button').textContent = 'Copied!'; },
-            function () { var r = document.createRange(); r.selectNodeContents(pre); var s = getSelection(); s.removeAllRanges(); s.addRange(r); }
-          );
-        });
-        dbg('page v40', navigator.userAgent);
-        dbg('secure=' + window.isSecureContext, 'mediaDevices=' + !!navigator.mediaDevices,
-            'getUserMedia=' + !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia));
-        if (navigator.permissions && navigator.permissions.query) {
-          navigator.permissions.query({ name: 'camera' }).then(
-            function (p) { dbg('camera permission: ' + p.state); },
-            function (e) { dbg('camera permission query failed: ' + e.message); }
-          );
-        }
-        ['touchstart', 'touchend', 'click'].forEach(function (type) {
-          document.addEventListener(type, function (e) {
-            var pt = e.changedTouches ? e.changedTouches[0] : e;
-            var top = document.elementFromPoint(pt.clientX, pt.clientY);
-            dbg(type + ' on ' + describe(e.target) + ' (top element: ' + describe(top) + ')');
-          }, true);
-        });
-      }
-      window.addEventListener('error', function (e) { dbg('ERROR', e.message, e.filename + ':' + e.lineno); show(e.message || 'script failed to load'); });
-      window.addEventListener('unhandledrejection', function (e) { dbg('REJECTION', String(e.reason)); show((e.reason && e.reason.message) || String(e.reason)); });
-      window.addEventListener('load', function () {
-        dbg('load event, app ready = ' + window.emojiFiedReady);
-        if (window.emojiFiedReady !== '40') show('an old or broken copy of the app loaded. Close this tab and open the link again.');
-      });
-    })();
-  </script>
-  <script src="gif.js?v=40"></script>
-  <script src="app.js?v=40"></script>
+  <script src="js/glyphs.js?v=2"></script>
+  <script src="js/pixelfont.js?v=2"></script>
+  <script src="js/look.js?v=2"></script>
+  <script src="js/tuneshine.js?v=2"></script>
+  <script src="js/app.js?v=2"></script>
 </body>
 </html>
