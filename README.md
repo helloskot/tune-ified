@@ -1,12 +1,12 @@
 # tune·fied
 
 Make things for your **Tuneshine** (the 64×64 LED display that shows album
-art) and send them to it: your camera as emoji, pictures and GIFs, scrolling
-pixel text, a clock, and a library of everything you've made. A sibling of
+art) and send them to it: remixes of the album art that's playing, pictures
+and GIFs, scrolling pixel text, and a library of everything you've made. A sibling of
 [emoji·fied](https://helloskot.github.io/emoji-fied/), sharing its emoji
 palettes, topo map and look.
 
-Live at **https://helloskot.github.io/tune-ified/** (once GitHub Pages is on).
+Live at **https://helloskot.github.io/tune-ified/**.
 
 ## What you need
 
@@ -34,18 +34,29 @@ The address is remembered, and the page reconnects by itself next time.
 
 ## Modes
 
-- **📷 Camera**: your camera, a video file or a shared screen or tab,
-  cropped square (with zoom). **▶ Go live** streams it. **Smooth** (the
-  default) sends half-second animated clips while the next one records, so
-  the Tuneshine plays every frame, about half a second behind. **Instant**
-  sends one picture at a time, the next as soon as the last arrives: less
-  delay, but the round trip limits the frame rate. Speed goes up to
-  30 fps. **📤 Send a loop** records 2–8 seconds (up to 60 frames) that
-  keep playing on the Tuneshine after you close the page.
+- **🎵 Album art**: a remix of the cover of whatever your Tuneshine is
+  playing.
+  - **Remixes:** emoji, LED dots, a topo map or pixels, still or animated:
+    **morph** (cover ↔ remix), **reveal** (cell by cell), **rainbow** or
+    **breathe**. **📤 Send the remix** sends one loop that plays by itself.
+  - **🎵 Get what's playing** asks the Tuneshine (`GET /state`) for the
+    song, then looks for the cover in three places, in order: a picture
+    address the Tuneshine includes, its own `GET /artwork` (only while it's
+    showing your music), then a search of Apple's and Deezer's catalogues.
+  - **Follow the music** checks every 5 seconds and remixes and sends each
+    new song as it starts, while the page is open. These automatic sends
+    stay out of the library. ⏹ Back to the music, or sending something
+    else, stops following.
+  - **Or find an album**: search the catalogues yourself, or choose or drop
+    a cover image.
+  - **Limits:** asking what's playing only works if the Tuneshine lets web
+    pages read its answers (CORS); if not, search instead. A catalogue cover
+    can only be remixed if its server allows it (CORS); if one can't, try
+    another result, or save the cover and drop it in.
 - **🖼 Picture**: drop any image or GIF (animated WebP and PNG too). Fill
   the square or fit it all in, zoom, and set the animation speed.
   Animations keep their own timing, up to 150 frames.
-- **Look** (camera and picture each keep their own):
+- **Look** (album art and picture each keep their own):
   - **Style:** emoji (Everything, Rainbow, Faces, Food, Nature, Animals,
     Hearts, Terrain), **LED dots**, or plain **pixels**.
   - **Grid:** 8 × 8 big emoji up to 64 × 64, every LED.
@@ -57,9 +68,6 @@ The address is remembered, and the page reconnects by itself next time.
   a rounded font. Emoji are welcome. It can scroll, stay still or bounce,
   with 8 colours (rainbow too) and 5 backgrounds. Sending it bakes one
   seamless loop. Still, single-colour text goes as a single picture.
-- **🕐 Clock**: digital, digital with the date, or the emoji clock face
-  for the time (🕐 … 🕧); 12- or 24-hour, 8 colours. **▶ Start the clock**
-  sends a new picture each minute while the page is open.
 - **💾 Library**: everything you send or save, kept in this browser (the
   newest 80). Click one to show it on the Tuneshine, ⬇ to download the
   `.webp`, ✕ to delete it.
@@ -72,13 +80,14 @@ A picture you send stays on the Tuneshine until it's cleared.
 **⏹ Back to the music** clears it, and the Tuneshine goes back to showing
 your music.
 
-- **How it clears:** it stops live sending first and waits for anything
-  still on its way to land, so a late clip can't put the picture back.
+- **How it clears:** it stops following the music first and waits for
+  anything still on its way to land, so a late send can't put the picture
+  back.
   Then it sends `DELETE /image` with `{"preserveImage": false}`, so the
   picture isn't kept on screen dimmed.
 - **By itself:** set it to go back 1, 5 or 15 minutes, or an hour, after
-  sending, or after you stop live. Starting live cancels the countdown,
-  and the page needs to stay open.
+  sending. Following the music cancels the countdown, and the page needs
+  to stay open.
 - **If it can't:** a web page can only send a `DELETE` if the Tuneshine
   allows it (CORS). If it doesn't, the page says so and gives you a
   one-line Terminal command (with a Copy button) that does the same thing.
@@ -91,7 +100,7 @@ curl -X DELETE -H 'Content-Type: application/json' -d '{"preserveImage":false}' 
 ## How it works
 
 - **Sending:** frames are drawn on a 64×64 canvas and turned into WebP with
-  `canvas.toBlob`. That's lossless for text, clocks and pixel art; photos
+  `canvas.toBlob`. That's lossless for text and pixel art; photos
   are smaller lossy. Animated WebP is put together in JS: a VP8X header
   with the animation flag, an ANIM chunk, and an ANMF chunk per frame. It
   goes to the Tuneshine as `POST /image` (multipart: `image` plus
@@ -109,8 +118,8 @@ curl -X DELETE -H 'Content-Type: application/json' -d '{"preserveImage":false}' 
     pixels.
   - `js/pixelfont.js`: the 5×7 font.
   - `js/tuneshine.js`: the device API and the WebP muxer.
-  - `js/app.js`: the modes, live sending, sending and saving, and the
-    library.
+  - `js/app.js`: the modes (album art remix and Follow the music,
+    picture, text, library), sending and saving.
 
 ## Run it
 

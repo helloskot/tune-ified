@@ -1,22 +1,22 @@
 'use strict';
 
 // tune·fied: make things for a Tuneshine's 64×64 LEDs and send them to it.
-// Five modes (camera, picture, text, clock, library) each draw a 64×64
-// frame; the preview shows it, and it goes to the Tuneshine live (camera,
-// clock) or as one WebP, still or animated, that it plays by itself.
+// Four modes (album art, picture, text, library) each draw a 64×64 frame;
+// the preview shows it, and it goes to the Tuneshine as one WebP, still or
+// animated, that it plays by itself.
 
 const $ = (sel) => document.querySelector(sel);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const ui = {};
 for (const id of [
-  'logoDot', 'conn', 'connDot', 'host', 'connectBtn', 'led', 'liveBtn', 'sendBtn', 'saveBtn', 'status',
-  'bright', 'brightOut', 'clearBtn', 'backAfter', 'clearHelp', 'clearWhy', 'clearCmd', 'copyCmd', 'sourceSeg', 'thumb', 'video', 'crop', 'startBtn', 'zoom', 'zoomOut',
-  'mirror', 'videoFile', 'liveMode', 'fps', 'fpsOut', 'loopSecs', 'drop', 'pictureFile', 'pictureInfo',
+  'logoDot', 'conn', 'connDot', 'host', 'connectBtn', 'led', 'sendBtn', 'saveBtn', 'status',
+  'bright', 'brightOut', 'clearBtn', 'backAfter', 'clearHelp', 'clearWhy', 'clearCmd', 'copyCmd', 'nowArt', 'nowTrack', 'nowArtist', 'nowBtn', 'follow', 'nowHint',
+  'searchForm', 'q', 'results', 'remix', 'albumFile', 'drop', 'pictureFile', 'pictureInfo',
   'fitSeg', 'pzoom', 'pzoomOut', 'pspeed', 'pspeedOut', 'lookBox', 'lookReset', 'style', 'grid',
   'matchField', 'match', 'contrast', 'contrastOut', 'lbright', 'lbrightOut', 'sat', 'satOut', 'blankField',
   'blank', 'topo', 'levelsField', 'levels', 'levelsOut', 'msg', 'fontSeg', 'motion', 'speedField', 'speed',
-  'speedOut', 'textColor', 'textBg', 'clockStyle', 'hourSeg', 'clockColor', 'library', 'libCount',
+  'speedOut', 'textColor', 'textBg', 'library', 'libCount',
 ]) ui[id] = document.getElementById(id);
 
 const lctx = ui.led.getContext('2d');
@@ -108,14 +108,14 @@ function showRange(input, out, fmt) {
   return paint;
 }
 
-// ---- Looks (camera and picture each keep their own) ------------------------------
+// ---- Looks (album art and picture each keep their own) ---------------------------
 
 const LOOK_DEFAULTS = {
-  camera: { style: 'emoji:everything', grid: '12', match: 'color', contrast: '1.2', lbright: '0', sat: '1.3', blank: true, topo: 'off', levels: '8' },
+  album: { style: 'emoji:everything', grid: '12', match: 'color', contrast: '1.15', lbright: '0', sat: '1.3', blank: false, topo: 'off', levels: '8' },
   picture: { style: 'pixels', grid: '64', match: 'color', contrast: '1', lbright: '0', sat: '1.1', blank: false, topo: 'off', levels: '8' },
 };
 const LOOK_KEYS = ['style', 'grid', 'match', 'contrast', 'lbright', 'sat', 'blank', 'topo', 'levels'];
-const looks = { camera: { ...LOOK_DEFAULTS.camera, ...store.get('look.camera', {}) }, picture: { ...LOOK_DEFAULTS.picture, ...store.get('look.picture', {}) } };
+const looks = { album: { ...LOOK_DEFAULTS.album, ...store.get('look.album', {}) }, picture: { ...LOOK_DEFAULTS.picture, ...store.get('look.picture', {}) } };
 const lookPainters = [];
 
 function lookFor(m) {
@@ -139,7 +139,7 @@ function showLook(m) {
 
 for (const k of LOOK_KEYS) {
   ui[k].addEventListener(ui[k].tagName === 'SELECT' || ui[k].type === 'checkbox' ? 'change' : 'input', () => {
-    const m = mode === 'picture' ? 'picture' : 'camera';
+    const m = mode; // the look box only shows for album art and pictures
     looks[m][k] = ui[k].type === 'checkbox' ? ui[k].checked : ui[k].value;
     if (k === 'style' && ui.style.value.startsWith('emoji:') && looks[m].grid === '64') looks[m].grid = '12';
     if (k === 'style') looks[m].match = ui.style.value === 'emoji:faces' ? 'brightness' : 'color';
@@ -154,7 +154,7 @@ lookPainters.push(
   showRange(ui.levels, ui.levelsOut, (v) => String(v)),
 );
 ui.lookReset.addEventListener('click', () => {
-  const m = mode === 'picture' ? 'picture' : 'camera';
+  const m = mode; // the look box only shows for album art and pictures
   looks[m] = { ...LOOK_DEFAULTS[m] };
   store.set(`look.${m}`, looks[m]);
   showLook(m);
@@ -162,85 +162,320 @@ ui.lookReset.addEventListener('click', () => {
 
 const styleName = (m) => ui.style.querySelector(`option[value="${looks[m].style}"]`)?.textContent || looks[m].style;
 
-// ---- 📷 Camera: camera, video file or shared screen --------------------------------
+// ---- 🎵 Album art remix ---------------------------------------------------------------
+// The cover of whatever your Tuneshine is playing, remixed through a look
+// (emoji, LED dots, topo map…), still or animated. The cover comes from the
+// Tuneshine itself if it lets web pages ask (/state, /artwork), otherwise
+// from a music catalogue (Apple's, then Deezer's), or you drop one in.
+// Follow the music remixes and sends each new song as it starts.
 
-const cam = { stream: null, fileUrl: null };
-const sourceSeg = segmented(ui.sourceSeg, 'source', 'camera', (src) => {
-  stopSource();
-  ui.startBtn.textContent = { camera: 'Start the camera', file: 'Choose a video', screen: 'Share a screen or tab' }[src];
-});
+const album = { bmp: null, meta: null, key: '', stamp: 0, following: false, timer: 0, remixKey: '' };
+const coverCv = document.createElement('canvas');
+coverCv.width = coverCv.height = LED;
+const coverCtx = coverCv.getContext('2d');
+const remixCv = document.createElement('canvas');
+remixCv.width = remixCv.height = LED;
+const remixCtx = remixCv.getContext('2d');
+const nowArtCtx = ui.nowArt.getContext('2d');
 
-function stopSource() {
-  cam.stream?.getTracks().forEach((t) => t.stop());
-  cam.stream = null;
-  if (cam.fileUrl) URL.revokeObjectURL(cam.fileUrl);
-  cam.fileUrl = null;
-  ui.video.srcObject = null;
-  ui.video.removeAttribute('src');
-  ui.video.load();
-  ui.startBtn.hidden = false;
-  ui.thumb.classList.remove('on');
+// One loop of each animated remix, in ms (0: a still picture).
+const REMIX_MS = { still: 0, morph: 4000, reveal: 4000, rainbow: 3000, breathe: 2000 };
+ui.remix.value = store.get('remix', 'morph');
+ui.remix.addEventListener('change', () => store.set('remix', ui.remix.value));
+
+function setAlbum(bmp, meta) {
+  album.bmp?.close?.();
+  album.bmp = bmp;
+  album.meta = meta;
+  album.stamp++;
+  // The cover itself, square and 64 pixels, for morphing to and from.
+  const side = Math.min(bmp.width, bmp.height);
+  coverCtx.imageSmoothingEnabled = true;
+  coverCtx.imageSmoothingQuality = 'high';
+  coverCtx.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, LED, LED);
+  nowArtCtx.drawImage(coverCv, 0, 0);
+  ui.nowTrack.textContent = meta.track || meta.album || 'A cover';
+  ui.nowArtist.textContent = [meta.artist, meta.track && meta.album ? meta.album : ''].filter(Boolean).join(' · ');
+  ui.nowArt.closest('.now').classList.add('has');
 }
 
-async function startSource() {
-  const src = sourceSeg.get();
-  if (src === 'file') return ui.videoFile.click();
+const albumTitle = () => {
+  const m = album.meta || {};
+  return `${m.track || m.album || 'Album art'}${m.artist ? ` · ${m.artist}` : ''}`;
+};
+
+// The remix itself, redrawn only when the cover or the look changes.
+function remixed() {
+  const key = `${album.stamp}|${JSON.stringify(looks.album)}`;
+  if (key !== album.remixKey) {
+    drawLook(remixCtx, album.bmp, album.bmp.width, album.bmp.height, lookFor('album'), { fit: 'fill', zoom: 1, mirror: false, settle: false });
+    album.remixKey = key;
+  }
+  return remixCv;
+}
+
+const ease = (x) => x * x * (3 - 2 * x);
+
+function renderAlbum(c, t) {
+  const r = remixed();
+  const kind = ui.remix.value, P = REMIX_MS[kind];
+  const p = P ? (t % P) / P : 0;
+  // There and back, resting a moment at each end.
+  const tri = p < 0.5 ? p * 2 : 2 - p * 2;
+  const k = ease(Math.min(1, Math.max(0, (tri - 0.15) / 0.7)));
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.filter = 'none';
+  c.globalAlpha = 1;
+  c.imageSmoothingEnabled = false;
+  c.fillStyle = '#000';
+  c.fillRect(0, 0, LED, LED);
+  if (kind === 'morph') {
+    // Cover ↔ remix.
+    c.drawImage(coverCv, 0, 0);
+    c.globalAlpha = k;
+    c.drawImage(r, 0, 0);
+    c.globalAlpha = 1;
+  } else if (kind === 'reveal') {
+    // The remix sweeps in cell by cell, corner to corner, and back out.
+    c.drawImage(coverCv, 0, 0);
+    const N = +looks.album.grid, cell = LED / N;
+    c.save();
+    c.beginPath();
+    for (let y = 0; y < N; y++) {
+      for (let x = 0; x < N; x++) if ((x + y) / Math.max(1, 2 * N - 2) < k * 1.02) c.rect(x * cell, y * cell, cell, cell);
+    }
+    c.clip();
+    c.drawImage(r, 0, 0);
+    c.restore();
+  } else if (kind === 'rainbow') {
+    c.filter = `hue-rotate(${Math.round(p * 360)}deg)`;
+    c.drawImage(r, 0, 0);
+    c.filter = 'none';
+  } else if (kind === 'breathe') {
+    const z = 1 + 0.08 * (0.5 - 0.5 * Math.cos(p * Math.PI * 2));
+    c.imageSmoothingEnabled = true;
+    c.setTransform(z, 0, 0, z, 32 * (1 - z), 32 * (1 - z));
+    c.drawImage(r, 0, 0);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+  } else c.drawImage(r, 0, 0);
+}
+
+// ---- Where covers come from ----
+
+// What the Tuneshine says is playing, skipping what we sent it ourselves.
+// Throws if it won't tell web pages (no CORS).
+async function nowPlaying() {
+  const st = await (await tsFetch('/state', {}, { readable: true })).json();
+  for (const m of [st.remoteMetadata, st.localMetadata, st.metadata]) {
+    if (!m || typeof m !== 'object' || m.artistName === 'tune·fied' || m.serviceName === 'tune·fied') continue;
+    if (!m.trackName && !m.albumName) continue;
+    // Any picture address it includes (the name of the field isn't documented).
+    const art = Object.entries(m).find(([k, v]) => typeof v === 'string' && /^https?:\/\//.test(v) && /art|image|cover|url/i.test(k))?.[1] || '';
+    return { track: m.trackName || '', artist: m.artistName || '', album: m.albumName || '', service: m.serviceName || '', art };
+  }
+  return null;
+}
+
+// A picture from the web, readable by the page (it needs CORS too).
+async function loadCover(url) {
+  if (location.protocol === 'https:' && url.startsWith('http:')) url = `https:${url.slice(5)}`;
+  const r = await fetch(url, { mode: 'cors', signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return createImageBitmap(await r.blob());
+}
+
+// Music catalogues answer web pages through JSONP (a script that calls us
+// back), since they don't send CORS headers for their search.
+function jsonp(url) {
+  return new Promise((res, rej) => {
+    const cb = `tunefied${Date.now()}${(Math.random() * 1e6) | 0}`;
+    const s = document.createElement('script');
+    const done = () => {
+      clearTimeout(timer);
+      delete window[cb];
+      s.remove();
+    };
+    const timer = setTimeout(() => (done(), rej(new Error('no answer'))), 9000);
+    window[cb] = (data) => (done(), res(data));
+    s.onerror = () => (done(), rej(new Error('search failed')));
+    s.src = `${url}&callback=${cb}`;
+    document.head.append(s);
+  });
+}
+
+async function searchAlbums(q) {
+  const [apple, deezer] = await Promise.allSettled([
+    jsonp(`https://itunes.apple.com/search?${new URLSearchParams({ term: q, media: 'music', entity: 'album', limit: 8 })}`),
+    jsonp(`https://api.deezer.com/search/album?${new URLSearchParams({ q, limit: 8, output: 'jsonp' })}`),
+  ]);
+  const out = [];
+  for (const r of apple.value?.results || []) {
+    if (r.artworkUrl100) out.push({ album: r.collectionName, artist: r.artistName, thumb: r.artworkUrl100, art: r.artworkUrl100.replace('100x100bb', '600x600bb'), from: 'Apple' });
+  }
+  for (const r of deezer.value?.data || []) {
+    if (r.cover_medium) out.push({ album: r.title, artist: r.artist?.name || '', thumb: r.cover_medium, art: r.cover_xl || r.cover_big || r.cover_medium, from: 'Deezer' });
+  }
+  return out;
+}
+
+// The cover for a song: the address the Tuneshine gave, its own /artwork
+// (only while it's showing the music, not something we sent), then the
+// catalogues. null if none can be read.
+async function coverFor(meta) {
+  const tries = [];
+  if (meta.art) tries.push(() => loadCover(meta.art));
+  if (!TS.ours) tries.push(async () => createImageBitmap(await (await tsFetch('/artwork', {}, { readable: true })).blob()));
+  tries.push(async () => {
+    for (const r of await searchAlbums(`${meta.artist} ${meta.album || meta.track}`)) {
+      try {
+        return await loadCover(r.art);
+      } catch {}
+    }
+    throw new Error('no cover found');
+  });
+  for (const t of tries) {
+    try {
+      return await t();
+    } catch (err) {
+      console.warn('cover:', err.message);
+    }
+  }
+  return null;
+}
+
+// "Get what's playing": find it and show the remix (sending is up to you).
+async function getNowPlaying() {
+  if (!TS.connected) return status('Connect your Tuneshine first, or find an album below.', 'bad');
+  ui.nowBtn.disabled = true;
+  status('Asking your Tuneshine what’s playing…');
   try {
-    const stream = src === 'screen'
-      ? await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
-      : await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 } }, audio: false });
-    stopSource();
-    cam.stream = stream;
-    ui.video.srcObject = stream;
-    stream.getVideoTracks()[0]?.addEventListener('ended', stopSource);
-    await ui.video.play().catch(() => {});
-    sourceOn();
-  } catch (err) {
-    status(src === 'screen' ? 'Screen sharing was cancelled.' : `Couldn’t start the camera: ${err.message}`, 'bad');
+    let meta;
+    try {
+      meta = await nowPlaying();
+    } catch {
+      ui.q.focus();
+      return status('Your Tuneshine doesn’t tell web pages what’s playing. Find the album below instead.', 'bad');
+    }
+    if (!meta) return status('Nothing’s playing right now.');
+    status(`Finding the cover for ${meta.track || meta.album}…`);
+    const bmp = await coverFor(meta);
+    if (!bmp) {
+      ui.q.value = `${meta.artist} ${meta.album || meta.track}`.trim();
+      searchUi();
+      return status('Couldn’t get that cover. Pick one below, or drop a cover image here.', 'bad');
+    }
+    album.key = `${meta.track}|${meta.artist}|${meta.album}`;
+    setAlbum(bmp, meta);
+    status(`Remixed ${albumTitle()}. Send it when you like it.`, 'good');
+  } finally {
+    ui.nowBtn.disabled = false;
+  }
+}
+ui.nowBtn.addEventListener('click', getNowPlaying);
+
+// ---- Follow the music ----
+
+async function followTick() {
+  if (!album.following) return;
+  try {
+    let meta;
+    try {
+      meta = await nowPlaying();
+    } catch {
+      stopFollowing();
+      return status('Your Tuneshine doesn’t tell web pages what’s playing, so it can’t be followed. Find albums below instead.', 'bad');
+    }
+    const key = meta ? `${meta.track}|${meta.artist}|${meta.album}` : '';
+    if (meta && key !== album.key && !busy) {
+      album.key = key;
+      status(`New song: ${meta.track || meta.album}. Remixing…`);
+      const bmp = await coverFor(meta);
+      if (bmp && album.following) {
+        setAlbum(bmp, meta);
+        await sendOrSave(true, true);
+      } else if (!bmp) status(`Couldn’t get the cover for ${meta.track || meta.album}. Still following.`, 'bad');
+    }
+  } finally {
+    if (album.following) album.timer = setTimeout(followTick, 5000);
   }
 }
 
-function sourceOn() {
-  ui.startBtn.hidden = true;
-  ui.thumb.classList.add('on');
-  ui.thumb.classList.toggle('mirrored', ui.mirror.checked && sourceSeg.get() === 'camera');
-  fitCrop();
+function startFollowing() {
+  if (!TS.connected) {
+    ui.follow.checked = false;
+    return status('Connect your Tuneshine first.', 'bad');
+  }
+  clearTimeout(backTimer); // no countdown while following
+  album.following = true;
+  album.key = ''; // send the current song straight away
+  status('Following the music: each new song gets remixed and sent.', 'good');
+  followTick();
 }
 
-ui.startBtn.addEventListener('click', startSource);
-ui.videoFile.addEventListener('change', () => {
-  const f = ui.videoFile.files[0];
-  if (!f) return;
-  stopSource();
-  cam.fileUrl = URL.createObjectURL(f);
-  ui.video.src = cam.fileUrl;
-  ui.video.loop = true;
-  ui.video.play().catch(() => {});
-  sourceOn();
-  ui.videoFile.value = '';
+function stopFollowing() {
+  if (!album.following) return;
+  album.following = false;
+  ui.follow.checked = false;
+  clearTimeout(album.timer);
+}
+ui.follow.addEventListener('change', () => (ui.follow.checked ? startFollowing() : (stopFollowing(), status('Stopped following. The last remix stays until you press ⏹ Back to the music.'))));
+
+// ---- Find an album ----
+
+async function searchUi() {
+  const q = ui.q.value.trim();
+  if (!q) return;
+  ui.results.innerHTML = '<p class="hint">Searching…</p>';
+  const found = await searchAlbums(q);
+  if (!found.length) {
+    ui.results.innerHTML = '<p class="hint">Nothing found (or the catalogues didn’t answer).</p>';
+    return;
+  }
+  ui.results.replaceChildren(...found.map((r) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'result';
+    b.title = `${r.album} · ${r.artist} (${r.from})`;
+    const img = document.createElement('img');
+    img.src = r.thumb;
+    img.alt = '';
+    img.loading = 'lazy';
+    const name = document.createElement('span');
+    name.textContent = r.album;
+    const by = document.createElement('small');
+    by.textContent = r.artist;
+    b.append(img, name, by);
+    b.addEventListener('click', async () => {
+      status(`Getting the cover for ${r.album}…`);
+      try {
+        setAlbum(await loadCover(r.art), { album: r.album, artist: r.artist });
+        stopFollowing();
+        status(`Remixed ${albumTitle()}. Send it when you like it.`, 'good');
+      } catch {
+        status(`${r.from} won’t let web pages remix that cover. Try another result, or save the cover and drop it here.`, 'bad');
+      }
+    });
+    return b;
+  }));
+}
+ui.searchForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  searchUi();
 });
-ui.video.addEventListener('loadedmetadata', fitCrop);
-ui.mirror.addEventListener('change', () => ui.thumb.classList.toggle('mirrored', ui.mirror.checked && sourceSeg.get() === 'camera'));
 
-// Outline the square that's used, over the video thumbnail.
-function fitCrop() {
-  const w = ui.video.videoWidth, h = ui.video.videoHeight;
-  if (!w || !h) return;
-  ui.thumb.style.aspectRatio = `${w} / ${h}`;
-  const side = Math.min(w, h) / +ui.zoom.value;
-  ui.crop.style.width = `${(side / w) * 100}%`;
-  ui.crop.style.height = `${(side / h) * 100}%`;
+// A cover image of your own.
+async function albumFromFile(f) {
+  try {
+    setAlbum(await createImageBitmap(f), { album: f.name.replace(/\.[^.]+$/, '') });
+    status(`Remixed ${albumTitle()}. Send it when you like it.`, 'good');
+  } catch {
+    status('Couldn’t read that picture.', 'bad');
+  }
 }
-showRange(ui.zoom, ui.zoomOut, (v) => `${v.toFixed(1)}×`);
-ui.zoom.addEventListener('input', fitCrop);
-showRange(ui.fps, ui.fpsOut, (v) => `${v} fps`);
-
-const camReady = () => ui.video.readyState >= 2 && ui.video.videoWidth > 0;
-function renderCamera(c) {
-  drawLook(c, ui.video, ui.video.videoWidth, ui.video.videoHeight, lookFor('camera'), {
-    fit: 'fill', zoom: +ui.zoom.value, mirror: ui.mirror.checked && sourceSeg.get() === 'camera', settle: true,
-  });
-}
+ui.albumFile.addEventListener('change', () => {
+  if (ui.albumFile.files[0]) albumFromFile(ui.albumFile.files[0]);
+  ui.albumFile.value = '';
+});
 
 // ---- 🖼 Picture: any image, animated ones too ----------------------------------------
 
@@ -306,10 +541,11 @@ document.addEventListener('dragover', (e) => e.preventDefault());
 document.addEventListener('drop', (e) => {
   if (e.target.closest?.('#drop')) return;
   e.preventDefault();
-  if (e.dataTransfer.files[0]?.type.startsWith('image/')) {
-    setMode('picture');
-    loadPicture(e.dataTransfer.files[0]);
-  }
+  const f = e.dataTransfer.files[0];
+  if (!f?.type.startsWith('image/')) return;
+  if (mode === 'album') return albumFromFile(f);
+  setMode('picture');
+  loadPicture(f);
 });
 
 function picFrameAt(t) {
@@ -403,63 +639,6 @@ function renderText(c, t, L = textLayout()) {
       drawPixelText(c, L.pieces[li], x, y, L.scale, ink, dy);
     }
   });
-}
-
-// ---- 🕐 Clock -----------------------------------------------------------------------
-
-const clock = store.get('clock', { style: 'digital', hours: '12', color: '#ffd23f' });
-ui.clockStyle.value = clock.style;
-const saveClock = () => store.set('clock', { style: ui.clockStyle.value, hours: hourSeg.get(), color: clockColor.get() });
-const hourSeg = segmented(ui.hourSeg, 'hours', clock.hours, saveClock);
-const clockColor = swatches(ui.clockColor, COLORS, clock.color, saveClock);
-ui.clockStyle.addEventListener('change', saveClock);
-
-const DAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-
-function clockParts(now = new Date()) {
-  const h24 = now.getHours(), m = now.getMinutes();
-  const h = hourSeg.get() === '24' ? h24 : h24 % 12 || 12;
-  const hh = hourSeg.get() === '24' ? String(h).padStart(2, '0') : String(h);
-  return { time: `${hh}:${String(m).padStart(2, '0')}`, ampm: h24 < 12 ? 'AM' : 'PM', h24, m, now };
-}
-
-// What's on the clock face; a new picture goes out when this changes.
-const clockKey = () => `${clockParts().time}|${ui.clockStyle.value}|${hourSeg.get()}|${clockColor.get()}`;
-
-function renderClock(c) {
-  c.setTransform(1, 0, 0, 1, 0, 0);
-  c.fillStyle = '#000';
-  c.fillRect(0, 0, LED, LED);
-  const P = clockParts();
-  const color = clockColor.get();
-  const twelve = hourSeg.get() === '12';
-  const draw = (str, scale, y) => {
-    const pieces = pixelPieces(str);
-    const w = pixelWidth(pieces, scale);
-    const x = Math.round((LED - w) / 2);
-    drawPixelText(c, pieces, x, y, scale, (i, px) => inkAt(color, px - x));
-  };
-  const style = ui.clockStyle.value;
-  if (style === 'emoji') {
-    // The clock emoji nearest the time: 🕐 … 🕛, 🕜 … 🕧 for half past.
-    const h12 = P.h24 % 12 || 12;
-    const half = P.m >= 15 && P.m < 45;
-    const hour = P.m >= 45 ? (h12 % 12) + 1 : h12;
-    const face = String.fromCodePoint((half ? 0x1f55c : 0x1f550) + hour - 1);
-    c.font = `40px ${EMOJI_FONT}`;
-    c.textAlign = 'center';
-    c.textBaseline = 'middle';
-    c.fillText(face, 32, 25);
-    draw(twelve ? `${P.time} ${P.ampm}` : P.time, 1, 51);
-  } else if (style === 'date') {
-    draw(P.time, 2, 12);
-    draw(`${DAYS[P.now.getDay()]} ${P.now.getDate()} ${MONTHS[P.now.getMonth()]}`, 1, 38);
-    if (twelve) draw(P.ampm, 1, 50);
-  } else {
-    draw(P.time, 2, twelve ? 20 : 25);
-    if (twelve) draw(P.ampm, 1, 42);
-  }
 }
 
 // ---- 💾 Library (IndexedDB, in this browser) ---------------------------------------
@@ -599,7 +778,7 @@ async function libSend(it) {
   libRefresh();
   libFrames(it);
   if (!TS.connected) return status(`Showing “${it.name}” here. Connect your Tuneshine to send it.`);
-  stopLive(true);
+  stopFollowing();
   status(`Sending “${it.name}”…`);
   try {
     await tsUpload(it.blob, it.name);
@@ -611,12 +790,11 @@ async function libSend(it) {
 
 // ---- Modes --------------------------------------------------------------------------
 
-let mode = 'camera';
+let mode = 'album';
 const MODES = {
-  camera: { ready: camReady, render: renderCamera, live: '▶ Go live', send: '📤 Send a loop', save: '💾 Save a loop', notReady: 'Start the camera first.' },
+  album: { ready: () => !!album.bmp, render: renderAlbum, send: '📤 Send the remix', save: '💾 Save', notReady: 'Get what’s playing, or find an album first.' },
   picture: { ready: () => pic.frames.length > 0, render: renderPicture, send: '📤 Send', save: '💾 Save', notReady: 'Choose a picture first.' },
   text: { ready: () => true, render: renderText, send: '📤 Send', save: '💾 Save' },
-  clock: { ready: () => true, render: renderClock, live: '▶ Start the clock' },
   library: { ready: () => lib.frames.length > 0, render: (c, t) => { c.imageSmoothingEnabled = false; c.drawImage(libFrameAt(t).bmp, 0, 0, LED, LED); } },
 };
 
@@ -624,7 +802,7 @@ function setMode(m) {
   mode = m;
   document.querySelectorAll('.tabs [data-mode]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.mode === m)));
   document.querySelectorAll('.tab-panel').forEach((p) => (p.hidden = p.dataset.panel !== m));
-  ui.lookBox.hidden = m !== 'camera' && m !== 'picture';
+  ui.lookBox.hidden = m !== 'album' && m !== 'picture';
   if (!ui.lookBox.hidden) showLook(m);
   syncActions();
   if (m === 'library') libRefresh();
@@ -634,10 +812,6 @@ document.querySelectorAll('.tabs [data-mode]').forEach((b) => b.addEventListener
 
 function syncActions() {
   const M = MODES[mode];
-  const liveHere = engine.on && engine.mode === mode;
-  ui.liveBtn.hidden = !M.live && !engine.on;
-  ui.liveBtn.setAttribute('aria-pressed', String(engine.on));
-  ui.liveBtn.textContent = engine.on ? (liveHere ? '■ Stop' : `■ Stop the ${engine.mode === 'clock' ? 'clock' : 'live camera'}`) : M.live || '';
   ui.sendBtn.hidden = !M.send;
   ui.sendBtn.textContent = M.send || '';
   ui.saveBtn.hidden = !M.save;
@@ -660,139 +834,13 @@ function idle(now) {
   lctx.setTransform(1, 0, 0, 1, 0, 0);
   lctx.fillStyle = '#000';
   lctx.fillRect(0, 0, LED, LED);
-  const lines = { camera: ['START', 'THE', 'CAMERA'], picture: ['DROP A', 'PICTURE', 'HERE'], library: ['PICK A', 'LOOP'] }[mode] || [''];
+  const lines = { album: ['PLAY SOME', 'MUSIC'], picture: ['DROP A', 'PICTURE', 'HERE'], library: ['PICK A', 'LOOP'] }[mode] || [''];
   lines.forEach((l, i) => {
     const p = pixelPieces(l);
     const x = Math.round((LED - pixelWidth(p, 1)) / 2);
     drawPixelText(lctx, p, x, 32 - lines.length * 5 + i * 10, 1, (j, px) => `hsl(${(px * 4 + now * 0.05) % 360} 80% 60%)`);
   });
 }
-
-// ---- Live: camera streaming, or the clock --------------------------------------------
-
-const engine = { on: false, gen: 0, mode: null, sent: 0, sends: 0, sendMs: 0, rateAt: 0, rateSent: 0, fails: 0 };
-const CLIP_S = 0.5; // Smooth mode: how much each clip holds
-
-function delivered(frames, ms) {
-  engine.fails = 0;
-  engine.sent += frames;
-  engine.sends++;
-  engine.sendMs += ms;
-  const now = performance.now();
-  if (!engine.rateAt) Object.assign(engine, { rateAt: now, rateSent: engine.sent, sends: 0, sendMs: 0 });
-  else if (now - engine.rateAt >= 1000) {
-    const fps = ((engine.sent - engine.rateSent) * 1000) / (now - engine.rateAt);
-    status(`Live · ${fps.toFixed(1)} fps · ${Math.round(engine.sendMs / Math.max(1, engine.sends))} ms per send`, 'good');
-    Object.assign(engine, { rateAt: now, rateSent: engine.sent, sends: 0, sendMs: 0 });
-  }
-}
-
-function failed(err) {
-  console.warn('tuneshine send failed:', err);
-  if (++engine.fails < 3) return false;
-  stopLive(true);
-  status('Lost the Tuneshine. Check it’s on and try again.', 'bad');
-  return true;
-}
-
-// Instant: one picture per request, the next once the last has arrived.
-async function instantLoop(gen) {
-  while (engine.on && gen === engine.gen) {
-    const t0 = performance.now();
-    try {
-      renderCamera(wctx);
-      await tsUpload(new Blob([await webpBytes(work, false)], { type: 'image/webp' }), 'Live camera');
-      delivered(1, performance.now() - t0);
-    } catch (err) {
-      if (failed(err)) return;
-    }
-    const wait = 1000 / +ui.fps.value - (performance.now() - t0);
-    if (wait > 0) await sleep(wait);
-  }
-}
-
-// Smooth: frames captured at full speed, sent as half-second animated clips
-// while the next one records, so the Tuneshine plays every frame. If
-// sending falls behind, the clip waiting is replaced by the newer one.
-async function smoothLoop(gen) {
-  let frames = [], pending = null, sending = false;
-  const send = async () => {
-    sending = true;
-    while (pending && engine.on && gen === engine.gen) {
-      const clip = pending;
-      pending = null;
-      const t0 = performance.now();
-      try {
-        await tsUpload(new Blob([animatedWebp(clip.frames, LED, LED, clip.ms, 1)], { type: 'image/webp' }), 'Live camera');
-        delivered(clip.frames.length, performance.now() - t0);
-      } catch (err) {
-        if (failed(err)) break;
-      }
-    }
-    sending = false;
-  };
-  let next = performance.now();
-  while (engine.on && gen === engine.gen) {
-    const fps = +ui.fps.value;
-    renderCamera(wctx);
-    frames.push(await webpBytes(work, false));
-    if (frames.length >= Math.max(2, Math.round(fps * CLIP_S))) {
-      pending = { frames, ms: Math.round(1000 / fps) };
-      frames = [];
-      if (!sending) send();
-    }
-    next += 1000 / fps;
-    const wait = next - performance.now();
-    if (wait > 0) await sleep(wait);
-    else next = performance.now();
-  }
-}
-
-// The clock: a new still whenever the face changes (once a minute).
-async function clockLoop(gen) {
-  let shown = '';
-  while (engine.on && gen === engine.gen) {
-    const key = clockKey();
-    if (key !== shown) {
-      try {
-        renderClock(wctx);
-        await tsUpload(new Blob([await webpBytes(work, true)], { type: 'image/webp' }), 'Clock');
-        shown = key;
-        engine.fails = 0;
-        status(`The clock is on the Tuneshine · ${clockParts().time}`, 'good');
-      } catch (err) {
-        if (failed(err)) return;
-      }
-    }
-    await sleep(1000);
-  }
-}
-
-function startLive() {
-  if (!TS.connected) return status('Connect your Tuneshine first.', 'bad');
-  if (!MODES[mode].ready()) return status(MODES[mode].notReady, 'bad');
-  clearTimeout(backTimer); // it's live: no going back mid-show
-  backAt = 0;
-  engine.on = true;
-  engine.mode = mode;
-  engine.gen++;
-  Object.assign(engine, { sent: 0, sends: 0, sendMs: 0, rateAt: 0, fails: 0 });
-  status(mode === 'clock' ? 'Starting the clock…' : 'Going live…');
-  if (mode === 'clock') clockLoop(engine.gen);
-  else (ui.liveMode.value === 'smooth' ? smoothLoop : instantLoop)(engine.gen);
-  syncActions();
-}
-
-function stopLive(quiet = false) {
-  if (!engine.on) return;
-  engine.on = false;
-  engine.gen++;
-  syncActions();
-  if (!quiet) status(`Stopped.${armBack() || ' The last picture stays until you press ⏹ Back to the music.'}`);
-}
-
-ui.liveBtn.addEventListener('click', () => (engine.on ? stopLive() : startLive()));
-ui.liveMode.addEventListener('change', () => engine.on && engine.mode === 'camera' && (stopLive(true), startLive()));
 
 // ---- Send and save: one WebP, still or animated ---------------------------------------
 
@@ -807,20 +855,16 @@ async function bake() {
     frames.push(await webpBytes(work, lossless));
     durations.push(ms);
   };
-  if (mode === 'camera') {
-    // Record it as it happens, up to 60 frames.
-    const secs = +ui.loopSecs.value;
-    const fps = Math.min(+ui.fps.value, 60 / secs);
-    const ms = 1000 / fps, n = Math.round(secs * fps), t0 = performance.now();
-    const lossless = looks.camera.style === 'pixels';
+  if (mode === 'album') {
+    // One loop of the remix (a single picture when it's still).
+    const P = REMIX_MS[ui.remix.value];
+    const lossless = looks.album.style === 'pixels';
+    const ms = 80, n = P ? Math.round(P / ms) : 1;
     for (let i = 0; i < n; i++) {
-      status(`Recording… ${Math.ceil((secs * (n - i)) / n)} s`);
-      renderCamera(wctx);
-      await grab(lossless, ms);
-      const wait = t0 + (i + 1) * ms - performance.now();
-      if (wait > 0) await sleep(wait);
+      renderAlbum(wctx, i * ms);
+      await grab(lossless, P ? ms : 1000);
     }
-    return { frames, durations, title: `Camera · ${styleName('camera')}` };
+    return { frames, durations, title: albumTitle() };
   }
   if (mode === 'picture') {
     const lossless = looks.picture.style === 'pixels';
@@ -864,24 +908,33 @@ async function bake() {
   throw new Error('Nothing to send here');
 }
 
-async function sendOrSave(send) {
-  if (busy) return;
+// `auto`: sent by Follow the music, which keeps it out of the library and
+// doesn't start the countdown back to the music.
+async function sendOrSave(send, auto = false) {
+  if (busy) return false;
   if (send && !TS.connected) return status('Connect your Tuneshine first.', 'bad');
   busy = true;
   ui.sendBtn.disabled = ui.saveBtn.disabled = true;
   try {
-    if (send) stopLive(true);
+    // Sending something else stops following (it'd be replaced next song).
+    if (send && !auto && mode !== 'album') stopFollowing();
     const { frames, durations, title } = await bake();
     const blob = new Blob([animatedWebp(frames, LED, LED, durations)], { type: 'image/webp' });
     const ms = durations.reduce((n, d) => n + d, 0);
     if (send) {
       status('Sending…');
       await tsUpload(blob, title);
-      status(`On the Tuneshine${frames.length > 1 ? `: ${frames.length} frames, ${(ms / 1000).toFixed(1)} s, playing by itself` : ''}. Kept in your library.${armBack()}`, 'good');
+      if (auto) {
+        status(`Now on the Tuneshine: ${title}.`, 'good');
+        return true;
+      }
+      status(`On the Tuneshine${frames.length > 1 ? `: ${frames.length} frames, ${(ms / 1000).toFixed(1)} s, playing by itself` : ''}. Kept in your library.${album.following ? ' Following the music.' : armBack()}`, 'good');
     } else status('Saved to your library.', 'good');
     await libAdd({ name: title, mode, blob, frames: frames.length, ms });
+    return true;
   } catch (err) {
     status(err.message, 'bad');
+    return false;
   } finally {
     busy = false;
     ui.sendBtn.disabled = ui.saveBtn.disabled = false;
@@ -902,7 +955,7 @@ function connected(on, msg, tone) {
 async function connect() {
   const host = ui.host.value.trim();
   store.set('host', host);
-  stopLive(true);
+  stopFollowing();
   connected(false, 'Looking for your Tuneshine…');
   ui.connectBtn.disabled = true;
   try {
@@ -930,15 +983,15 @@ ui.bright.addEventListener('input', () => {
 
 // ---- Back to the music --------------------------------------------------------------
 // ⏹ clears what we sent so the Tuneshine shows your music again, or it can
-// happen by itself a while after sending. Live sending stops first, and the
-// clear waits for anything still on its way (see tsClear).
+// happen by itself a while after sending. Following the music stops first,
+// and the clear waits for anything still on its way (see tsClear).
 
 let backTimer = 0, backAt = 0;
 
 async function backToMusic(auto = false) {
   clearTimeout(backTimer);
   backAt = 0;
-  if (engine.on) stopLive(true);
+  stopFollowing();
   if (!TS.connected) return status('Connect your Tuneshine first.', 'bad');
   status(auto ? 'Time’s up: handing it back to the music…' : 'Handing it back to the music…');
   const r = await tsClear();
@@ -991,7 +1044,7 @@ setInterval(() => {
 
 // ---- Start ----------------------------------------------------------------------------
 
-setMode(store.get('mode', 'camera') === 'library' ? 'camera' : store.get('mode', 'camera'));
+setMode(MODES[store.get('mode')] && store.get('mode') !== 'library' ? store.get('mode') : 'album');
 requestAnimationFrame(preview);
 libRefresh();
 ui.host.value = store.get('host', '');

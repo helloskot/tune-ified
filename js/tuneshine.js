@@ -16,6 +16,7 @@ const TS = {
   name: '',
   cors: null, // does it answer web pages? null until known
   tas: null, // does targetAddressSpace work here? null until known
+  ours: false, // showing something we sent (rather than the music)?
 };
 
 // Accepts "192.168.1.42", "tuneshine-20b4.local", "http://…/" and so on.
@@ -98,6 +99,7 @@ function tsUpload(blob, title = 'tune·fied') {
   fd.append('image', blob, 'tunefied.webp');
   fd.append('metadata', new Blob([JSON.stringify({ trackName: title, artistName: 'tune·fied', serviceName: 'tune·fied' })], { type: 'application/json' }));
   const p = tsFetch('/image', { method: 'POST', body: fd });
+  TS.ours = true;
   tsInflight.add(p);
   p.catch(() => {}).finally(() => tsInflight.delete(p));
   return p;
@@ -116,10 +118,14 @@ async function tsClear() {
   ]) {
     try {
       await tsFetch('/image', opts, { readable: true });
+      TS.ours = false;
       return { ok: true };
     } catch (err) {
       // Nothing of ours on it: it's already showing the music.
-      if (err.http === 404 || err.http === 409) return { ok: true, already: true };
+      if (err.http === 404 || err.http === 409) {
+        TS.ours = false;
+        return { ok: true, already: true };
+      }
       http = err.http || 0;
     }
   }
