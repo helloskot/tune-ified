@@ -1,11 +1,10 @@
 {
-  "name": "emoji·fied",
-  "short_name": "emoji·fied",
-  "description": "Turn your camera into live emoji & unicode art.",
+  "name": "tune·fied",
+  "short_name": "tune·fied",
+  "description": "Your camera, pictures, text and clocks as emoji art on a Tuneshine.",
   "start_url": "./",
   "scope": "./",
-  "display": "fullscreen",
-  "orientation": "any",
+  "display": "standalone",
   "background_color": "#0e0d11",
   "theme_color": "#0e0d11",
   "icons": [
