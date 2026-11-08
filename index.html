@@ -9,7 +9,7 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📟</text></svg>" />
   <link rel="preload" href="fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin />
   <link rel="preload" href="fonts/dm-mono-500.woff2" as="font" type="font/woff2" crossorigin />
-  <link rel="stylesheet" href="style.css?v=2" />
+  <link rel="stylesheet" href="style.css?v=3" />
 </head>
 <body>
   <header>
@@ -29,8 +29,7 @@
         <div class="led-mask" aria-hidden="true"></div>
       </div>
       <div class="actions">
-        <button id="liveBtn" type="button" class="primary" aria-pressed="false">▶ Go live</button>
-        <button id="sendBtn" type="button" class="primary">📤 Send a loop</button>
+        <button id="sendBtn" type="button" class="primary">📤 Send the remix</button>
         <button id="saveBtn" type="button">💾 Save</button>
       </div>
       <p class="status" id="status" role="status">Connect your Tuneshine to start.</p>
@@ -66,53 +65,49 @@
     <!-- What to show -->
     <section class="panel">
       <nav class="tabs" role="tablist">
-        <button type="button" role="tab" data-mode="camera" aria-selected="true">📷 <span>Camera</span></button>
+        <button type="button" role="tab" data-mode="album" aria-selected="true">🎵 <span>Album art</span></button>
         <button type="button" role="tab" data-mode="picture" aria-selected="false">🖼 <span>Picture</span></button>
         <button type="button" role="tab" data-mode="text" aria-selected="false">🔤 <span>Text</span></button>
-        <button type="button" role="tab" data-mode="clock" aria-selected="false">🕐 <span>Clock</span></button>
         <button type="button" role="tab" data-mode="library" aria-selected="false">💾 <span>Library</span></button>
       </nav>
 
-      <!-- Camera: camera, video file or screen, live -->
-      <div class="tab-panel" data-panel="camera">
+      <!-- Album art: remix the cover of what's playing -->
+      <div class="tab-panel" data-panel="album">
         <div class="sec">
-          <div class="seg" id="sourceSeg">
-            <button type="button" data-source="camera" aria-pressed="true">📷 Camera</button>
-            <button type="button" data-source="file" aria-pressed="false">🎞 Video</button>
-            <button type="button" data-source="screen" aria-pressed="false">🖥 Screen</button>
-          </div>
-          <div class="source-view">
-            <div class="thumb" id="thumb">
-              <video id="video" playsinline muted autoplay></video>
-              <div class="crop" id="crop" aria-hidden="true"></div>
-              <button id="startBtn" type="button" class="primary start">Start the camera</button>
-            </div>
-            <div class="framing">
-              <label class="field range"><span>Zoom <output id="zoomOut"></output></span><input id="zoom" type="range" min="1" max="4" step="0.05" value="1" /></label>
-              <label class="switch"><input id="mirror" type="checkbox" checked /> Mirror</label>
+          <div class="now" id="nowBox">
+            <canvas id="nowArt" width="64" height="64" aria-label="The cover"></canvas>
+            <div class="now-text">
+              <span class="field-label">Now remixing</span>
+              <b id="nowTrack">Nothing yet</b>
+              <span id="nowArtist" class="hint">Get what your Tuneshine is playing, or find an album.</span>
             </div>
           </div>
-          <input id="videoFile" type="file" accept="video/*" hidden />
+          <div class="now-actions">
+            <button id="nowBtn" type="button" class="primary">🎵 Get what’s playing</button>
+            <label class="switch" title="Each new song is remixed and sent automatically, while this page is open"><input id="follow" type="checkbox" /> Follow the music</label>
+          </div>
+          <p class="note" id="nowHint">Follow the music sends a remix of each new song as it starts, while this page is open.</p>
         </div>
         <div class="sec">
-          <span class="field-label">Live</span>
           <label class="field">
-            <span>Mode</span>
-            <select id="liveMode">
-              <option value="smooth" selected>Smooth · short clips, about ½ s behind</option>
-              <option value="instant">Instant · one picture at a time</option>
+            <span>Remix</span>
+            <select id="remix">
+              <option value="still">Still</option>
+              <option value="morph" selected>Morph · cover ↔ remix</option>
+              <option value="reveal">Reveal · cell by cell</option>
+              <option value="rainbow">Rainbow</option>
+              <option value="breathe">Breathe</option>
             </select>
           </label>
-          <label class="field range"><span>Speed <output id="fpsOut"></output></span><input id="fps" type="range" min="1" max="30" step="1" value="15" /></label>
-          <label class="field">
-            <span>Loops last</span>
-            <select id="loopSecs">
-              <option value="2">2 seconds</option>
-              <option value="3" selected>3 seconds</option>
-              <option value="5">5 seconds</option>
-              <option value="8">8 seconds</option>
-            </select>
-          </label>
+        </div>
+        <div class="sec">
+          <span class="field-label">Or find an album</span>
+          <form class="search" id="searchForm" autocomplete="off">
+            <input id="q" type="text" placeholder="Artist, album…" spellcheck="false" aria-label="Search for an album" />
+            <button type="submit">Search</button>
+          </form>
+          <div class="results" id="results"></div>
+          <label class="hint file-link">…or <u>choose a cover image</u> (or drop one anywhere)<input id="albumFile" type="file" accept="image/*" hidden /></label>
         </div>
       </div>
 
@@ -134,7 +129,7 @@
         </div>
       </div>
 
-      <!-- Look: shared by camera and picture (each keeps its own) -->
+      <!-- Look: shared by album art and picture (each keeps its own) -->
       <div class="look" id="lookBox">
         <div class="sec">
           <div class="sec-head"><span class="field-label">Look</span><button id="lookReset" type="button" class="reset">Reset</button></div>
@@ -218,27 +213,6 @@
         </div>
       </div>
 
-      <!-- Clock -->
-      <div class="tab-panel" data-panel="clock" hidden>
-        <div class="sec">
-          <label class="field">
-            <span>Style</span>
-            <select id="clockStyle">
-              <option value="digital" selected>Digital</option>
-              <option value="date">Digital with the date</option>
-              <option value="emoji">Emoji clock face</option>
-            </select>
-          </label>
-          <div class="seg" id="hourSeg">
-            <button type="button" data-hours="12" aria-pressed="true">12-hour</button>
-            <button type="button" data-hours="24" aria-pressed="false">24-hour</button>
-          </div>
-          <span class="field-label">Colour</span>
-          <div class="swatches" id="clockColor"></div>
-          <p class="note">The Tuneshine gets a new picture each minute while this page is open.</p>
-        </div>
-      </div>
-
       <!-- Library -->
       <div class="tab-panel" data-panel="library" hidden>
         <div class="sec">
@@ -254,10 +228,10 @@
     <p>Needs Chrome or Edge on a computer on the same Wi-Fi as your Tuneshine (firmware 2.3.0 or later). A sibling of <a href="https://helloskot.github.io/emoji-fied/">emoji·fied</a>.</p>
   </footer>
 
-  <script src="js/glyphs.js?v=2"></script>
-  <script src="js/pixelfont.js?v=2"></script>
-  <script src="js/look.js?v=2"></script>
-  <script src="js/tuneshine.js?v=2"></script>
-  <script src="js/app.js?v=2"></script>
+  <script src="js/glyphs.js?v=3"></script>
+  <script src="js/pixelfont.js?v=3"></script>
+  <script src="js/look.js?v=3"></script>
+  <script src="js/tuneshine.js?v=3"></script>
+  <script src="js/app.js?v=3"></script>
 </body>
 </html>
